@@ -50,6 +50,10 @@
             <label>Qual serviço você quer?</label>
             <select id="serviceSelect" required><option value="">Carregando serviços…</option></select>
           </div>
+          <div class="field hidden" id="proField">
+            <label>Com qual profissional?</label>
+            <select id="proSelect"><option value="">Sem preferência</option></select>
+          </div>
           <button type="button" class="btn btn-gold btn-block" data-next="2">Continuar →</button>
         </div>
 
@@ -95,7 +99,8 @@
           <a href="#" class="btn btn-ghost" id="gcalBtn" target="_blank" rel="noopener">Google Agenda</a>
         </div>
         <div style="margin-top:14px"><button type="button" class="btn btn-ghost btn-sm" id="newBooking">Fazer outro agendamento</button></div>
-        <p class="muted" style="font-size:.8rem;margin-top:14px">Guarde a confirmação. Precisa remarcar? É só chamar no WhatsApp.</p>
+        <p class="muted hidden" id="manageWrap" style="font-size:.82rem;margin-top:16px">Precisa cancelar ou remarcar? <a id="manageLink" href="#" style="color:var(--gold)">Gerenciar meu agendamento →</a></p>
+        <p class="muted" style="font-size:.8rem;margin-top:10px">Guarde esta confirmação.</p>
       </div>
     </div>
   </div>
@@ -108,11 +113,11 @@
 (function(){
   "use strict";
   var TR = window.TR, db = TR.db;
-  var services = {};
+  var services = {}, professionals = {};
   var el = function(id){return document.getElementById(id);};
   var panels = document.querySelectorAll(".step-panel");
   var stepEls = document.querySelectorAll(".steps .step");
-  var serviceSelect = el("serviceSelect"), dateInput = el("dateInput");
+  var serviceSelect = el("serviceSelect"), dateInput = el("dateInput"), proSelect = el("proSelect");
   var slotsBox = el("slots"), timeInput = el("timeInput"), dayNote = el("dayNote");
   var summary = el("summary"), formErr = el("formErr"), successBox = el("successBox");
   var form = el("bookingForm");
@@ -144,12 +149,28 @@
     if(q && services[q]) serviceSelect.value=q;
   }
 
+  async function loadProfessionals(){
+    if(!db) return;
+    var r = await db.from("professionals").select("*").eq("active",true).order("sort_order");
+    if(r.error || !r.data) return;
+    r.data.forEach(function(p){ professionals[p.id]=p; });
+    // so' pergunta o profissional se houver 2 ou mais
+    if(r.data.length >= 2){
+      r.data.forEach(function(p){
+        var o=document.createElement("option"); o.value=p.id;
+        o.textContent=p.name + (p.role ? " — "+p.role : "");
+        proSelect.appendChild(o);
+      });
+      el("proField").classList.remove("hidden");
+    }
+  }
+
   async function loadSlots(){
     if(!serviceSelect.value || !dateInput.value || !db) return;
     var d=new Date(dateInput.value+"T00:00:00");
     dayNote.textContent = dias[d.getDay()]+", "+dateInput.value.split("-").reverse().join("/");
     slotsBox.innerHTML='<p class="slots-empty">Buscando horários…</p>'; timeInput.value="";
-    var r = await db.rpc("get_available_slots",{ p_service_id:serviceSelect.value, p_date:dateInput.value });
+    var r = await db.rpc("get_available_slots",{ p_service_id:serviceSelect.value, p_date:dateInput.value, p_professional_id:(proSelect.value||null) });
     if(r.error){ slotsBox.innerHTML='<p class="slots-empty">Erro ao buscar horários.</p>'; return; }
     if(!r.data || !r.data.length){ slotsBox.innerHTML='<p class="slots-empty">Nenhum horário livre neste dia. Tente outra data. 🗓️</p>'; return; }
     slotsBox.innerHTML="";
@@ -165,8 +186,10 @@
 
   function buildSummary(){
     var s=services[serviceSelect.value]; if(!s) return;
+    var proTxt = proSelect.value && professionals[proSelect.value] ? professionals[proSelect.value].name : "Sem preferência";
     summary.innerHTML=
       '<div><span>Serviço</span><b>'+s.name+'</b></div>'+
+      (el("proField").classList.contains("hidden")?'':'<div><span>Profissional</span><span>'+proTxt+'</span></div>')+
       '<div><span>Data</span><span>'+dateInput.value.split("-").reverse().join("/")+'</span></div>'+
       '<div><span>Horário</span><span>'+timeInput.value+'</span></div>'+
       '<div><span>Duração</span><span>'+s.duration_min+' min</span></div>'+
@@ -218,6 +241,7 @@
   });
   form.querySelectorAll("[data-prev]").forEach(function(b){ b.addEventListener("click",function(){ showStep(Number(b.dataset.prev)); }); });
   serviceSelect.addEventListener("change",function(){ if(dateInput.value) loadSlots(); });
+  proSelect.addEventListener("change",function(){ if(dateInput.value) loadSlots(); });
   dateInput.addEventListener("change",loadSlots);
 
   var now=new Date(); var off=now.getTimezoneOffset()*60000;
@@ -232,18 +256,27 @@
     var btn=el("submitBtn"); btn.disabled=true; btn.textContent="Enviando…";
     var r = await db.rpc("book_appointment",{
       p_service_id:serviceSelect.value, p_name:name, p_phone:phone, p_date:dateInput.value,
-      p_time:timeInput.value, p_email:"", p_notes:(el("cNotes").value||"").trim()
+      p_time:timeInput.value, p_professional_id:(proSelect.value||null), p_email:"", p_notes:(el("cNotes").value||"").trim()
     });
     btn.disabled=false; btn.textContent="Confirmar agendamento ✓";
     if(r.error){ return showErr("Erro ao agendar. Tente novamente."); }
     if(!r.data || !r.data.ok){ return showErr((r.data&&r.data.error)||"Não foi possível concluir."); }
 
     var s=services[serviceSelect.value];
+    var prof = r.data.professional || "";
     var dataBr = dateInput.value.split("-").reverse().join("/");
     form.classList.add("hidden");
     successBox.classList.remove("hidden");
-    el("successText").innerHTML="Olá <b>"+name+"</b>! Seu horário de <b>"+s.name+"</b> está marcado para <b>"+
-      dataBr+"</b> às <b>"+timeInput.value+"</b>. Até lá! ✂️";
+    el("successText").innerHTML="Olá <b>"+name+"</b>! Seu horário de <b>"+s.name+"</b>"+
+      (prof? " com <b>"+prof+"</b>":"")+" está marcado para <b>"+dataBr+"</b> às <b>"+timeInput.value+"</b>. Até lá! ✂️";
+
+    // link do cliente para cancelar/remarcar (sem conta)
+    window.__manageUrl = "";
+    if (r.data.id && r.data.token) {
+      window.__manageUrl = location.origin + location.pathname.replace(/agendar\.html$/,"") + "gerenciar.html?id=" + r.data.id + "&t=" + r.data.token;
+      el("manageLink").href = window.__manageUrl;
+      el("manageWrap").classList.remove("hidden");
+    }
 
     // WhatsApp com os dados (vai para o WhatsApp do salao/teste)
     el("waConfirm").href = TR.waLink(
@@ -251,8 +284,10 @@
       "• Cliente: "+name+"\n"+
       "• WhatsApp: "+phone+"\n"+
       "• Serviço: "+s.name+"\n"+
+      (prof? "• Profissional: "+prof+"\n":"")+
       "• Data: "+dataBr+"\n"+
-      "• Horário: "+timeInput.value);
+      "• Horário: "+timeInput.value+
+      (window.__manageUrl? "\n• Gerenciar/cancelar: "+window.__manageUrl : ""));
     // Calendario — cai no celular do cliente (.ics) ou Google Agenda
     el("icsBtn").href = buildICS(s, dateInput.value, timeInput.value, name);
     el("gcalBtn").href = buildGCal(s, dateInput.value, timeInput.value, name);
@@ -267,6 +302,7 @@
   });
 
   loadServices();
+  loadProfessionals();
 })();
 </script>
 </body>

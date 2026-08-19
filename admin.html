@@ -14,6 +14,7 @@
     <span class="brand"><b>✦ TR Atelier</b></span>
     <nav id="tabs" class="hidden">
       <a data-tab="agenda" class="on">Agenda</a>
+      <a data-tab="profissionais">Profissionais</a>
       <a data-tab="servicos">Serviços & Preços</a>
       <a data-tab="orcamentos">Orçamentos</a>
       <a data-tab="config">Configurações</a>
@@ -27,6 +28,7 @@
   <div id="gate"><p class="muted">Carregando…</p></div>
   <div id="app" class="hidden">
     <div class="tabpane on" id="pane-agenda"></div>
+    <div class="tabpane" id="pane-profissionais"></div>
     <div class="tabpane" id="pane-servicos"></div>
     <div class="tabpane" id="pane-orcamentos"></div>
     <div class="tabpane" id="pane-config"></div>
@@ -84,7 +86,7 @@
       return;
     }
     el("gate").classList.add("hidden"); el("app").classList.remove("hidden"); el("tabs").classList.remove("hidden");
-    setupTabs(); renderAgenda(); renderServicos(); renderOrcamentos(); renderConfig();
+    setupTabs(); renderAgenda(); renderProfissionais(); renderServicos(); renderOrcamentos(); renderConfig();
   }
 
   function setupTabs(){
@@ -102,7 +104,7 @@
   async function renderAgenda(){
     var pane=el("pane-agenda");
     var today=new Date(); var off=today.getTimezoneOffset()*60000; var todayStr=new Date(today-off).toISOString().slice(0,10);
-    var { data, error } = await db.from("appointments").select("*, services(name)").order("appt_date").order("appt_time");
+    var { data, error } = await db.from("appointments").select("*, services(name), professionals(name)").order("appt_date").order("appt_time");
     if(error){ pane.innerHTML='<div class="panel"><p class="muted">Erro ao carregar agenda.</p></div>'; return; }
     var todayCount=data.filter(function(a){return a.appt_date===todayStr && a.status!=="cancelado";}).length;
     var pend=data.filter(function(a){return a.status==="pendente";}).length;
@@ -117,7 +119,7 @@
       }
       return '<tr><td><b>'+brDate(a.appt_date)+'</b><br><span class="muted">'+a.appt_time.slice(0,5)+'</span></td>'+
         '<td>'+esc(a.customer_name)+(a.notes?'<br><span class="muted" style="font-size:.8rem">“'+esc(a.notes)+'”</span>':'')+'</td>'+
-        '<td>'+esc(a.services?a.services.name:"")+'</td>'+
+        '<td>'+esc(a.services?a.services.name:"")+(a.professionals?'<br><span class="muted" style="font-size:.8rem">👤 '+esc(a.professionals.name)+'</span>':"")+'</td>'+
         '<td><a href="https://wa.me/55'+wa+'" target="_blank" style="color:var(--gold)">'+esc(a.customer_phone)+'</a></td>'+
         '<td><span class="badge '+(badge[a.status]||"")+'">'+a.status+'</span></td>'+
         '<td><div class="row-actions">'+acts+'</div></td></tr>';
@@ -219,6 +221,42 @@
       var { error } = await db.from("settings").upsert(rows);
       el("cfg_msg").textContent = error ? "Erro ao salvar." : "Salvo! ✓";
     });
+  }
+
+  // ---------- PROFISSIONAIS ----------
+  var editProId=null;
+  async function renderProfissionais(){
+    var pane=el("pane-profissionais");
+    var { data } = await db.from("professionals").select("*").order("sort_order");
+    data=data||[];
+    var ed = editProId ? data.filter(function(p){return p.id===editProId;})[0] : null;
+    var rows=data.map(function(p){
+      return '<tr><td>'+p.sort_order+'</td><td><b>'+esc(p.name)+'</b></td><td>'+esc(p.role||"")+'</td>'+
+        '<td>'+(p.active?'<span class="badge b-confirmado">Ativo</span>':'<span class="badge b-cancelado">Inativo</span>')+'</td>'+
+        '<td><div class="row-actions"><button class="btn btn-sm" data-edp="'+p.id+'">Editar</button>'+
+        '<button class="btn btn-sm" data-delp="'+p.id+'">Excluir</button></div></td></tr>';
+    }).join("");
+    pane.innerHTML='<h1 style="font-family:var(--serif);font-size:1.9rem;margin:0 0 6px">Profissionais</h1>'+
+      '<p class="muted" style="margin:0 0 22px">Quem atende no salão. Cada profissional tem a própria agenda; o cliente escolhe na hora de agendar.</p>'+
+      '<div class="panel" style="max-width:none;margin-bottom:22px"><h2 style="font-family:var(--serif);margin-top:0">'+(ed?"Editar profissional":"Novo profissional")+'</h2>'+
+      '<div class="grid g2"><div class="field"><label>Nome</label><input id="p_name" value="'+esc(ed?ed.name:"")+'"></div>'+
+      '<div class="field"><label>Função (opcional)</label><input id="p_role" value="'+esc(ed?ed.role:"")+'" placeholder="Cabeleireiro(a), Barbeiro..."></div></div>'+
+      '<div class="grid g2"><div class="field"><label>Ordem</label><input id="p_ord" type="number" value="'+(ed?ed.sort_order:0)+'"></div>'+
+      '<div class="field"><label>&nbsp;</label><label style="color:var(--cream)"><input type="checkbox" id="p_act" '+(!ed||ed.active?"checked":"")+'> Ativo</label></div></div>'+
+      '<button class="btn btn-gold" id="p_save">'+(ed?"Salvar":"Adicionar")+'</button> '+(ed?'<button class="btn btn-ghost" id="p_cancel">Cancelar</button>':'')+'</div>'+
+      '<div class="panel" style="max-width:none"><table><thead><tr><th>Ordem</th><th>Nome</th><th>Função</th><th>Status</th><th>Ações</th></tr></thead><tbody>'+
+      (data.length?rows:'<tr><td colspan="5" class="muted center">Nenhum profissional ainda.</td></tr>')+'</tbody></table></div>';
+
+    el("p_save").addEventListener("click", async function(){
+      var payload={name:(el("p_name").value||"").trim(), role:(el("p_role").value||"").trim(),
+        sort_order:parseInt(el("p_ord").value)||0, active:el("p_act").checked};
+      if(payload.name.length<2){ alert("Informe o nome."); return; }
+      if(ed){ await db.from("professionals").update(payload).eq("id",ed.id); } else { await db.from("professionals").insert(payload); }
+      editProId=null; renderProfissionais();
+    });
+    if(el("p_cancel")) el("p_cancel").addEventListener("click",function(){ editProId=null; renderProfissionais(); });
+    pane.querySelectorAll("[data-edp]").forEach(function(b){ b.addEventListener("click",function(){ editProId=b.dataset.edp; renderProfissionais(); window.scrollTo({top:0,behavior:"smooth"}); }); });
+    pane.querySelectorAll("[data-delp]").forEach(function(b){ b.addEventListener("click", async function(){ if(!confirm("Excluir este profissional? Os agendamentos dele ficam sem profissional."))return; await db.from("professionals").delete().eq("id",b.dataset.delp); renderProfissionais(); }); });
   }
 
   gate();

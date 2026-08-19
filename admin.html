@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Painel — TR Atelier</title>
+<link rel="icon" href="assets/icon.png" type="image/png">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+<header class="admin-top">
+  <div class="container">
+    <span class="brand"><b>✦ TR Atelier</b></span>
+    <nav id="tabs" class="hidden">
+      <a data-tab="agenda" class="on">Agenda</a>
+      <a data-tab="servicos">Serviços & Preços</a>
+      <a data-tab="orcamentos">Orçamentos</a>
+      <a data-tab="config">Configurações</a>
+      <a href="index.html" target="_blank">Ver site ↗</a>
+    </nav>
+    <a href="#" id="logout" class="muted" style="margin-left:auto;font-size:.86rem">Sair →</a>
+  </div>
+</header>
+
+<div class="container" style="padding:28px 24px 70px">
+  <div id="gate"><p class="muted">Carregando…</p></div>
+  <div id="app" class="hidden">
+    <div class="tabpane on" id="pane-agenda"></div>
+    <div class="tabpane" id="pane-servicos"></div>
+    <div class="tabpane" id="pane-orcamentos"></div>
+    <div class="tabpane" id="pane-config"></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="assets/config.js"></script>
+<script src="assets/main.js"></script>
+<script>
+(function(){
+  "use strict";
+  var TR=window.TR, db=TR.db;
+  var el=function(id){return document.getElementById(id);};
+  var esc=function(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});};
+  var badge={pendente:"b-pendente",confirmado:"b-confirmado",concluido:"b-concluido",cancelado:"b-cancelado",novo:"b-novo",respondido:"b-confirmado",fechado:"b-concluido"};
+  var brDate=function(d){return d?d.split("-").reverse().join("/"):"";};
+
+  el("logout").addEventListener("click", async function(e){ e.preventDefault(); if(db) await db.auth.signOut(); location.href="index.html"; });
+
+  // ---------- GATE ----------
+  async function gate(){
+    if(!TR.configured){ el("gate").innerHTML='<div class="panel"><p class="muted">Conecte o Supabase em <b>assets/config.js</b> para usar o painel.</p></div>'; return; }
+    var user=await TR.getUser();
+    if(!user){
+      el("gate").innerHTML='<div class="panel" style="max-width:420px"><h2 style="font-family:var(--serif);color:var(--gold);margin-top:0">Área do salão</h2>'+
+        '<p class="muted">Entre com a conta de dono para acessar o painel.</p>'+
+        '<button class="btn btn-google btn-block" id="g" style="margin-top:12px">Entrar com Google</button>'+
+        '<div class="divider">ou email (sem senha)</div>'+
+        '<input id="me" type="email" placeholder="seu@email.com" style="width:100%;padding:12px 14px;background:var(--ink-soft);border:1px solid var(--line-2);border-radius:10px;color:var(--cream)">'+
+        '<button class="btn btn-ghost btn-block" id="ml" style="margin-top:10px">Receber link mágico</button>'+
+        '<p class="muted" id="mm" style="font-size:.82rem"></p></div>';
+      el("g").addEventListener("click",function(){ db.auth.signInWithOAuth({provider:"google",options:{redirectTo:location.href.split("#")[0]}}); });
+      el("ml").addEventListener("click", async function(){ var em=(el("me").value||"").trim(); if(!/.+@.+\..+/.test(em)){el("mm").textContent="Email inválido.";return;} el("ml").disabled=true; var r=await db.auth.signInWithOtp({email:em,options:{emailRedirectTo:location.href.split("#")[0]}}); el("ml").disabled=false; el("mm").textContent=r.error?"Erro ao enviar.":"Link enviado! Confira seu email."; });
+      return;
+    }
+    var { data:isAdmin } = await db.rpc("is_admin");
+    if(!isAdmin){
+      el("gate").innerHTML='<div class="panel" style="max-width:520px"><h2 style="font-family:var(--serif);color:var(--gold);margin-top:0">Sem permissão</h2>'+
+        '<p class="muted">Esta conta ('+esc(user.email)+') ainda não é administradora.<br><br>No Supabase → Table Editor → <b>admins</b> → Insert row, cole seu <b>user id</b> (Authentication → Users). Depois recarregue.</p>'+
+        '<button class="btn btn-ghost" id="out">Trocar de conta</button></div>';
+      el("out").addEventListener("click", async function(){ await db.auth.signOut(); location.reload(); });
+      return;
+    }
+    el("gate").classList.add("hidden"); el("app").classList.remove("hidden"); el("tabs").classList.remove("hidden");
+    setupTabs(); renderAgenda(); renderServicos(); renderOrcamentos(); renderConfig();
+  }
+
+  function setupTabs(){
+    el("tabs").querySelectorAll("[data-tab]").forEach(function(a){
+      a.addEventListener("click",function(e){ e.preventDefault();
+        el("tabs").querySelectorAll("[data-tab]").forEach(function(x){x.classList.remove("on");});
+        a.classList.add("on");
+        document.querySelectorAll(".tabpane").forEach(function(p){p.classList.remove("on");});
+        el("pane-"+a.dataset.tab).classList.add("on");
+      });
+    });
+  }
+
+  // ---------- AGENDA ----------
+  async function renderAgenda(){
+    var pane=el("pane-agenda");
+    var today=new Date(); var off=today.getTimezoneOffset()*60000; var todayStr=new Date(today-off).toISOString().slice(0,10);
+    var { data, error } = await db.from("appointments").select("*, services(name)").order("appt_date").order("appt_time");
+    if(error){ pane.innerHTML='<div class="panel"><p class="muted">Erro ao carregar agenda.</p></div>'; return; }
+    var todayCount=data.filter(function(a){return a.appt_date===todayStr && a.status!=="cancelado";}).length;
+    var pend=data.filter(function(a){return a.status==="pendente";}).length;
+    var upc=data.filter(function(a){return a.appt_date>=todayStr && (a.status==="pendente"||a.status==="confirmado");}).length;
+    var rows=data.map(function(a){
+      var wa=(a.customer_phone||"").replace(/\D/g,"");
+      var acts="";
+      if(a.status==="pendente") acts+='<button class="btn btn-sm btn-gold" data-act="confirmado" data-id="'+a.id+'">Confirmar</button>';
+      if(a.status==="pendente"||a.status==="confirmado"){
+        acts+='<button class="btn btn-sm" data-act="concluido" data-id="'+a.id+'">Concluir</button>';
+        acts+='<button class="btn btn-sm" data-act="cancelado" data-id="'+a.id+'">Cancelar</button>';
+      }
+      return '<tr><td><b>'+brDate(a.appt_date)+'</b><br><span class="muted">'+a.appt_time.slice(0,5)+'</span></td>'+
+        '<td>'+esc(a.customer_name)+(a.notes?'<br><span class="muted" style="font-size:.8rem">“'+esc(a.notes)+'”</span>':'')+'</td>'+
+        '<td>'+esc(a.services?a.services.name:"")+'</td>'+
+        '<td><a href="https://wa.me/55'+wa+'" target="_blank" style="color:var(--gold)">'+esc(a.customer_phone)+'</a></td>'+
+        '<td><span class="badge '+(badge[a.status]||"")+'">'+a.status+'</span></td>'+
+        '<td><div class="row-actions">'+acts+'</div></td></tr>';
+    }).join("");
+    pane.innerHTML='<h1 style="font-family:var(--serif);font-size:1.9rem;margin:0 0 4px">Agenda</h1>'+
+      '<p class="muted" style="margin:0 0 22px">Gerencie os agendamentos em tempo real.</p>'+
+      '<div class="stat-row"><div class="stat"><b>'+todayCount+'</b><span>Hoje</span></div>'+
+      '<div class="stat"><b>'+pend+'</b><span>Aguardando confirmação</span></div>'+
+      '<div class="stat"><b>'+upc+'</b><span>Próximos ativos</span></div>'+
+      '<div class="stat"><b>'+data.length+'</b><span>Total</span></div></div>'+
+      '<div class="panel" style="max-width:none">'+(data.length?'<table><thead><tr><th>Data/Hora</th><th>Cliente</th><th>Serviço</th><th>Contato</th><th>Status</th><th>Ações</th></tr></thead><tbody>'+rows+'</tbody></table>':'<p class="muted center">Nenhum agendamento ainda.</p>')+'</div>';
+    pane.querySelectorAll("[data-act]").forEach(function(b){
+      b.addEventListener("click", async function(){ b.disabled=true;
+        await db.from("appointments").update({status:b.dataset.act}).eq("id",b.dataset.id); renderAgenda(); renderOrcamentos();
+      });
+    });
+  }
+
+  // ---------- SERVIÇOS ----------
+  var editId=null;
+  async function renderServicos(){
+    var pane=el("pane-servicos");
+    var { data } = await db.from("services").select("*").order("sort_order");
+    data=data||[];
+    var ed = editId ? data.filter(function(s){return s.id===editId;})[0] : null;
+    var rows=data.map(function(s){
+      return '<tr><td>'+s.sort_order+'</td><td><b>'+esc(s.name)+'</b><br><span class="muted" style="font-size:.8rem">'+esc(s.description)+'</span></td>'+
+        '<td>'+TR.money(s.price)+'</td><td>'+s.duration_min+' min</td>'+
+        '<td>'+(s.active?'<span class="badge b-confirmado">Ativo</span>':'<span class="badge b-cancelado">Inativo</span>')+'</td>'+
+        '<td><div class="row-actions"><button class="btn btn-sm" data-edit="'+s.id+'">Editar</button>'+
+        '<button class="btn btn-sm" data-del="'+s.id+'">Excluir</button></div></td></tr>';
+    }).join("");
+    pane.innerHTML='<h1 style="font-family:var(--serif);font-size:1.9rem;margin:0 0 22px">Serviços & Preços</h1>'+
+      '<div class="panel" style="max-width:none;margin-bottom:22px"><h2 style="font-family:var(--serif);margin-top:0">'+(ed?"Editar serviço":"Novo serviço")+'</h2>'+
+      '<div class="grid-2"><div class="field"><label>Nome</label><input id="s_name" value="'+esc(ed?ed.name:"")+'"></div>'+
+      '<div class="field"><label>Descrição</label><input id="s_desc" value="'+esc(ed?ed.description:"")+'"></div></div>'+
+      '<div class="grid-2"><div class="field"><label>Preço (R$)</label><input id="s_price" value="'+(ed?ed.price:"")+'" placeholder="100.00"></div>'+
+      '<div class="field"><label>Duração (min)</label><input id="s_dur" type="number" value="'+(ed?ed.duration_min:30)+'"></div></div>'+
+      '<div class="grid-2"><div class="field"><label>Ordem</label><input id="s_ord" type="number" value="'+(ed?ed.sort_order:0)+'"></div>'+
+      '<div class="field"><label>&nbsp;</label><label style="color:var(--cream)"><input type="checkbox" id="s_act" '+(!ed||ed.active?"checked":"")+'> Ativo (aparece no site)</label></div></div>'+
+      '<button class="btn btn-gold" id="s_save">'+(ed?"Salvar":"Adicionar")+'</button> '+(ed?'<button class="btn btn-ghost" id="s_cancel">Cancelar</button>':'')+'</div>'+
+      '<div class="panel" style="max-width:none"><table><thead><tr><th>Ordem</th><th>Serviço</th><th>Preço</th><th>Duração</th><th>Status</th><th>Ações</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+
+    el("s_save").addEventListener("click", async function(){
+      var payload={name:(el("s_name").value||"").trim(),description:(el("s_desc").value||"").trim(),
+        price:parseFloat((el("s_price").value||"0").replace(",","."))||0,duration_min:parseInt(el("s_dur").value)||30,
+        sort_order:parseInt(el("s_ord").value)||0,active:el("s_act").checked};
+      if(!payload.name){ alert("Informe o nome."); return; }
+      if(ed){ await db.from("services").update(payload).eq("id",ed.id); } else { await db.from("services").insert(payload); }
+      editId=null; renderServicos();
+    });
+    if(el("s_cancel")) el("s_cancel").addEventListener("click",function(){ editId=null; renderServicos(); });
+    pane.querySelectorAll("[data-edit]").forEach(function(b){ b.addEventListener("click",function(){ editId=b.dataset.edit; renderServicos(); window.scrollTo({top:0,behavior:"smooth"}); }); });
+    pane.querySelectorAll("[data-del]").forEach(function(b){ b.addEventListener("click", async function(){ if(!confirm("Excluir este serviço?"))return; await db.from("services").delete().eq("id",b.dataset.del); renderServicos(); }); });
+  }
+
+  // ---------- ORÇAMENTOS ----------
+  async function renderOrcamentos(){
+    var pane=el("pane-orcamentos");
+    var { data } = await db.from("quote_requests").select("*").order("created_at",{ascending:false});
+    data=data||[];
+    var rows=data.map(function(q){
+      var wa=(q.phone||"").replace(/\D/g,"");
+      var next = q.status==="novo" ? "respondido" : (q.status==="respondido"?"fechado":"novo");
+      return '<tr><td>'+esc(q.name)+'<br><a href="https://wa.me/55'+wa+'" target="_blank" style="color:var(--gold);font-size:.84rem">'+esc(q.phone)+'</a></td>'+
+        '<td>'+esc(q.service_interest||"-")+'</td><td style="max-width:280px">'+esc(q.message||"")+'</td>'+
+        '<td><span class="badge '+(badge[q.status]||"")+'">'+q.status+'</span></td>'+
+        '<td><button class="btn btn-sm" data-q="'+q.id+'" data-next="'+next+'">→ '+next+'</button></td></tr>';
+    }).join("");
+    pane.innerHTML='<h1 style="font-family:var(--serif);font-size:1.9rem;margin:0 0 6px">Pedidos de Orçamento</h1>'+
+      '<p class="muted" style="margin:0 0 22px">Clientes que pediram orçamento pelo site.</p>'+
+      '<div class="panel" style="max-width:none">'+(data.length?'<table><thead><tr><th>Cliente</th><th>Interesse</th><th>Mensagem</th><th>Status</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>':'<p class="muted center">Nenhum pedido ainda.</p>')+'</div>';
+    pane.querySelectorAll("[data-q]").forEach(function(b){ b.addEventListener("click", async function(){ await db.from("quote_requests").update({status:b.dataset.next}).eq("id",b.dataset.q); renderOrcamentos(); }); });
+  }
+
+  // ---------- CONFIG ----------
+  async function renderConfig(){
+    var pane=el("pane-config");
+    var { data } = await db.from("settings").select("*");
+    var map={}; (data||[]).forEach(function(r){ map[r.key]=r.value; });
+    function f(k,label,ph){ return '<div class="field"><label>'+label+'</label><input id="cfg_'+k+'" value="'+esc(map[k]||"")+'" placeholder="'+(ph||"")+'"></div>'; }
+    var days=[["1","Seg"],["2","Ter"],["3","Qua"],["4","Qui"],["5","Sex"],["6","Sáb"],["0","Dom"]];
+    var wd=(map.work_days||"0,1,2,3,4,5,6").split(",");
+    var dayboxes=days.map(function(d){return '<label style="display:inline-flex;align-items:center;gap:6px;margin-right:14px;color:var(--cream)"><input type="checkbox" class="wd" value="'+d[0]+'" '+(wd.indexOf(d[0])>=0?"checked":"")+'> '+d[1]+'</label>';}).join("");
+    pane.innerHTML='<h1 style="font-family:var(--serif);font-size:1.9rem;margin:0 0 22px">Configurações</h1>'+
+      '<div class="panel" style="max-width:none;margin-bottom:22px"><h2 style="font-family:var(--serif);margin-top:0">Dados do salão</h2>'+
+      '<div class="grid-2">'+f("salon_name","Nome")+f("salon_tagline","Slogan")+f("salon_phone","Telefone")+
+      f("salon_whatsapp","WhatsApp (5514...)")+f("salon_address","Endereço")+f("salon_instagram","Instagram (sem @)")+'</div></div>'+
+      '<div class="panel" style="max-width:none;margin-bottom:22px"><h2 style="font-family:var(--serif);margin-top:0">Horário de funcionamento</h2>'+
+      '<div class="grid-2">'+f("open_time","Abre (HH:MM)","09:00")+f("close_time","Fecha (HH:MM)","18:00")+
+      f("slot_interval","Intervalo entre horários (min)","30")+f("capacity","Atendimentos simultâneos","1")+'</div>'+
+      '<div class="field"><label>Dias de atendimento</label><div>'+dayboxes+'</div></div></div>'+
+      '<button class="btn btn-gold" id="cfg_save">Salvar configurações</button> <span class="muted" id="cfg_msg" style="margin-left:10px"></span>';
+    el("cfg_save").addEventListener("click", async function(){
+      var keys=["salon_name","salon_tagline","salon_phone","salon_whatsapp","salon_address","salon_instagram","open_time","close_time","slot_interval","capacity"];
+      var rows=keys.map(function(k){ return {key:k, value:(el("cfg_"+k).value||"").trim()}; });
+      var wds=[]; pane.querySelectorAll(".wd:checked").forEach(function(c){ wds.push(c.value); });
+      rows.push({key:"work_days", value:wds.join(",")});
+      var { error } = await db.from("settings").upsert(rows);
+      el("cfg_msg").textContent = error ? "Erro ao salvar." : "Salvo! ✓";
+    });
+  }
+
+  gate();
+})();
+</script>
+</body>
+</html>

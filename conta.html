@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Minha conta — TR Atelier</title>
+<link rel="icon" href="assets/icon.png" type="image/png">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="container nav">
+    <a href="index.html" class="brand">
+      <img src="assets/logo.png" alt="TR Atelier">
+      <span class="txt"><b>TR ATELIER</b><span>Tatto Fernandes e Re Arfelli</span></span>
+    </a>
+    <nav class="nav-links" id="navLinks">
+      <a href="index.html#servicos">Serviços</a>
+      <a href="orcamento.html">Orçamento</a>
+      <a href="agendar.html">Agendar</a>
+      <a href="#" id="logout">Sair</a>
+    </nav>
+    <button class="nav-toggle" id="navToggle" aria-label="Menu">☰</button>
+  </div>
+</header>
+
+<section class="section">
+  <div class="container">
+    <div class="section-head">
+      <p class="eyebrow">Minha conta</p>
+      <h2>Meus agendamentos</h2>
+    </div>
+    <div class="panel" id="content">
+      <p class="muted center">Carregando…</p>
+    </div>
+  </div>
+</section>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="assets/config.js"></script>
+<script src="assets/main.js"></script>
+<script>
+(function(){
+  var TR=window.TR, db=TR.db, content=document.getElementById("content");
+  var badge={pendente:"b-pendente",confirmado:"b-confirmado",concluido:"b-concluido",cancelado:"b-cancelado"};
+  document.getElementById("logout").addEventListener("click", async function(e){ e.preventDefault(); if(db) await db.auth.signOut(); location.href="index.html"; });
+
+  async function run(){
+    if(!TR.configured){ content.innerHTML='<p class="muted center">Conecte o Supabase em assets/config.js.</p>'; return; }
+    var user=await TR.getUser();
+    if(!user){
+      content.innerHTML='<div class="center"><p class="muted">Entre para ver seus agendamentos.</p>'+
+        '<button class="btn btn-google" id="g" style="margin-top:12px">Entrar com Google</button></div>';
+      document.getElementById("g").addEventListener("click", function(){ db.auth.signInWithOAuth({provider:"google",options:{redirectTo:location.href.split("#")[0]}}); });
+      return;
+    }
+    var { data, error } = await db.from("appointments").select("*, services(name)").order("appt_date",{ascending:false}).order("appt_time");
+    if(error){ content.innerHTML='<p class="muted center">Erro ao carregar.</p>'; return; }
+    if(!data.length){ content.innerHTML='<div class="center"><p class="muted">Você ainda não tem agendamentos.</p><a href="agendar.html" class="btn btn-gold" style="margin-top:12px">Agendar agora</a></div>'; return; }
+    var rows=data.map(function(a){
+      var dt=a.appt_date.split("-").reverse().join("/");
+      var svc=a.services?a.services.name:"Serviço";
+      return '<tr><td><b>'+dt+'</b><br><span class="muted">'+a.appt_time.slice(0,5)+'</span></td>'+
+        '<td>'+svc+'</td><td><span class="badge '+(badge[a.status]||"")+'">'+a.status+'</span></td></tr>';
+    }).join("");
+    content.innerHTML='<table><thead><tr><th>Data/Hora</th><th>Serviço</th><th>Status</th></tr></thead><tbody>'+rows+'</tbody></table>'+
+      '<p class="muted" style="font-size:.84rem;margin-top:16px">Precisa remarcar ou cancelar? <a id="wa" href="#" style="color:var(--gold)">Chame no WhatsApp →</a></p>'+
+      '<div style="margin-top:18px"><a href="agendar.html" class="btn btn-gold">Novo agendamento</a></div>';
+    document.getElementById("wa").href=TR.waLink("Olá! Quero remarcar/cancelar um agendamento no TR Atelier.");
+  }
+  run();
+})();
+</script>
+</body>
+</html>

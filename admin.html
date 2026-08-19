@@ -14,7 +14,9 @@
     <span class="brand"><b>✦ TR Atelier</b></span>
     <nav id="tabs" class="hidden">
       <a data-tab="agenda" class="on">Agenda</a>
+      <a data-tab="relatorios">Relatórios</a>
       <a data-tab="profissionais">Profissionais</a>
+      <a data-tab="bloqueios">Bloqueios</a>
       <a data-tab="servicos">Serviços & Preços</a>
       <a data-tab="orcamentos">Orçamentos</a>
       <a data-tab="config">Configurações</a>
@@ -28,7 +30,9 @@
   <div id="gate"><p class="muted">Carregando…</p></div>
   <div id="app" class="hidden">
     <div class="tabpane on" id="pane-agenda"></div>
+    <div class="tabpane" id="pane-relatorios"></div>
     <div class="tabpane" id="pane-profissionais"></div>
+    <div class="tabpane" id="pane-bloqueios"></div>
     <div class="tabpane" id="pane-servicos"></div>
     <div class="tabpane" id="pane-orcamentos"></div>
     <div class="tabpane" id="pane-config"></div>
@@ -86,7 +90,7 @@
       return;
     }
     el("gate").classList.add("hidden"); el("app").classList.remove("hidden"); el("tabs").classList.remove("hidden");
-    setupTabs(); renderAgenda(); renderProfissionais(); renderServicos(); renderOrcamentos(); renderConfig();
+    setupTabs(); renderAgenda(); renderRelatorios(); renderProfissionais(); renderBloqueios(); renderServicos(); renderOrcamentos(); renderConfig();
   }
 
   function setupTabs(){
@@ -257,6 +261,98 @@
     if(el("p_cancel")) el("p_cancel").addEventListener("click",function(){ editProId=null; renderProfissionais(); });
     pane.querySelectorAll("[data-edp]").forEach(function(b){ b.addEventListener("click",function(){ editProId=b.dataset.edp; renderProfissionais(); window.scrollTo({top:0,behavior:"smooth"}); }); });
     pane.querySelectorAll("[data-delp]").forEach(function(b){ b.addEventListener("click", async function(){ if(!confirm("Excluir este profissional? Os agendamentos dele ficam sem profissional."))return; await db.from("professionals").delete().eq("id",b.dataset.delp); renderProfissionais(); }); });
+  }
+
+  // ---------- RELATORIOS ----------
+  function ymd(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+  async function renderRelatorios(){
+    var pane=el("pane-relatorios");
+    var now=new Date();
+    var start=now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0")+"-01";
+    var nx=new Date(now.getFullYear(), now.getMonth()+1, 1);
+    var next=nx.getFullYear()+"-"+String(nx.getMonth()+1).padStart(2,"0")+"-01";
+    var mesNome=now.toLocaleDateString("pt-BR",{month:"long",year:"numeric"});
+
+    var { data } = await db.from("appointments")
+      .select("appt_date,status, services(name,price), professionals(name)")
+      .gte("appt_date",start).lt("appt_date",next);
+    data=data||[];
+
+    var ativos=data.filter(function(a){return a.status!=="cancelado";});
+    var concl=data.filter(function(a){return a.status==="concluido";});
+    var canc=data.filter(function(a){return a.status==="cancelado";});
+    var fatReal=concl.reduce(function(s,a){return s+(a.services?Number(a.services.price):0);},0);
+    var fatPrev=ativos.reduce(function(s,a){return s+(a.services?Number(a.services.price):0);},0);
+
+    var porServ={}, porProf={};
+    ativos.forEach(function(a){
+      var sn=a.services?a.services.name:"—"; porServ[sn]=(porServ[sn]||0)+1;
+      var pn=a.professionals?a.professionals.name:"—";
+      if(!porProf[pn]) porProf[pn]={n:0,fat:0};
+      porProf[pn].n++; if(a.status==="concluido") porProf[pn].fat+=(a.services?Number(a.services.price):0);
+    });
+    var servRows=Object.keys(porServ).sort(function(a,b){return porServ[b]-porServ[a];})
+      .map(function(k){return '<tr><td>'+esc(k)+'</td><td>'+porServ[k]+'</td></tr>';}).join("") || '<tr><td colspan="2" class="muted center">Sem dados no mês.</td></tr>';
+    var profRows=Object.keys(porProf).sort(function(a,b){return porProf[b].n-porProf[a].n;})
+      .map(function(k){return '<tr><td>'+esc(k)+'</td><td>'+porProf[k].n+'</td><td>'+TR.money(porProf[k].fat)+'</td></tr>';}).join("") || '<tr><td colspan="3" class="muted center">Sem dados no mês.</td></tr>';
+    var taxa = data.length ? Math.round(concl.length/data.length*100) : 0;
+
+    pane.innerHTML='<h1 style="font-family:var(--serif);font-size:1.9rem;margin:0 0 6px">Relatórios</h1>'+
+      '<p class="muted" style="margin:0 0 22px;text-transform:capitalize">'+esc(mesNome)+'</p>'+
+      '<div class="stat-row">'+
+        '<div class="stat"><b>'+TR.money(fatReal)+'</b><span>Faturamento realizado (concluídos)</span></div>'+
+        '<div class="stat"><b>'+TR.money(fatPrev)+'</b><span>Previsto (agendados no mês)</span></div>'+
+        '<div class="stat"><b>'+ativos.length+'</b><span>Atendimentos no mês</span></div>'+
+        '<div class="stat"><b>'+concl.length+'</b><span>Concluídos</span></div>'+
+        '<div class="stat"><b>'+canc.length+'</b><span>Cancelados</span></div>'+
+        '<div class="stat"><b>'+taxa+'%</b><span>Taxa de conclusão</span></div>'+
+      '</div>'+
+      '<div class="grid g2">'+
+        '<div class="panel" style="max-width:none"><h2 style="font-family:var(--serif);margin-top:0">Serviços mais agendados</h2>'+
+          '<table><thead><tr><th>Serviço</th><th>Qtd</th></tr></thead><tbody>'+servRows+'</tbody></table></div>'+
+        '<div class="panel" style="max-width:none"><h2 style="font-family:var(--serif);margin-top:0">Por profissional</h2>'+
+          '<table><thead><tr><th>Profissional</th><th>Atend.</th><th>Faturado</th></tr></thead><tbody>'+profRows+'</tbody></table></div>'+
+      '</div>';
+  }
+
+  // ---------- BLOQUEIOS (folgas / feriados) ----------
+  async function renderBloqueios(){
+    var pane=el("pane-bloqueios");
+    var pros=(await db.from("professionals").select("*").eq("active",true).order("sort_order")).data||[];
+    var today=(function(){var d=new Date();var o=d.getTimezoneOffset()*60000;return new Date(d-o).toISOString().slice(0,10);})();
+    var { data } = await db.from("blocked_slots").select("*, professionals(name)").gte("block_date",today).order("block_date");
+    data=data||[];
+    var proOpts='<option value="">Todos os profissionais</option>'+pros.map(function(p){return '<option value="'+p.id+'">'+esc(p.name)+'</option>';}).join("");
+    var rows=data.map(function(b){
+      return '<tr><td><b>'+esc(brDate(b.block_date))+'</b></td>'+
+        '<td>'+(b.block_time?esc(b.block_time.slice(0,5)):'<span class="muted">Dia inteiro</span>')+'</td>'+
+        '<td>'+(b.professionals?esc(b.professionals.name):'<span class="muted">Todos</span>')+'</td>'+
+        '<td>'+esc(b.reason||"")+'</td>'+
+        '<td><button class="btn btn-sm btn-danger" data-delb="'+b.id+'">Remover</button></td></tr>';
+    }).join("");
+    pane.innerHTML='<h1 style="font-family:var(--serif);font-size:1.9rem;margin:0 0 6px">Bloqueios de agenda</h1>'+
+      '<p class="muted" style="margin:0 0 22px">Folgas, feriados ou intervalos. Horário bloqueado some da agenda pros clientes.</p>'+
+      '<div class="panel" style="max-width:none;margin-bottom:22px"><h2 style="font-family:var(--serif);margin-top:0">Novo bloqueio</h2>'+
+      '<div class="grid g4">'+
+        '<div class="field"><label>Data</label><input type="date" id="b_date" min="'+today+'"></div>'+
+        '<div class="field"><label>Horário (vazio = dia inteiro)</label><input type="time" id="b_time"></div>'+
+        '<div class="field"><label>Profissional</label><select id="b_pro">'+proOpts+'</select></div>'+
+        '<div class="field"><label>Motivo (opcional)</label><input id="b_reason" placeholder="Folga, feriado..."></div>'+
+      '</div><button class="btn btn-gold" id="b_save">Adicionar bloqueio</button> <span class="muted" id="b_msg" style="margin-left:10px"></span></div>'+
+      '<div class="panel" style="max-width:none"><h2 style="font-family:var(--serif);margin-top:0">Próximos bloqueios</h2>'+
+      '<table><thead><tr><th>Data</th><th>Horário</th><th>Profissional</th><th>Motivo</th><th></th></tr></thead><tbody>'+
+      (data.length?rows:'<tr><td colspan="5" class="muted center">Nenhum bloqueio.</td></tr>')+'</tbody></table></div>';
+
+    el("b_save").addEventListener("click", async function(){
+      var d=el("b_date").value; if(!d){ el("b_msg").textContent="Escolha a data."; return; }
+      var payload={ block_date:d, block_time:(el("b_time").value||null), professional_id:(el("b_pro").value||null), reason:(el("b_reason").value||"").trim() };
+      el("b_save").disabled=true;
+      var { error } = await db.from("blocked_slots").insert(payload);
+      el("b_save").disabled=false;
+      if(error){ el("b_msg").textContent="Erro ao salvar."; return; }
+      renderBloqueios();
+    });
+    pane.querySelectorAll("[data-delb]").forEach(function(b){ b.addEventListener("click", async function(){ await db.from("blocked_slots").delete().eq("id",b.dataset.delb); renderBloqueios(); }); });
   }
 
   gate();

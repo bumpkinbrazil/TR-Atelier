@@ -26,7 +26,6 @@
       <a href="#servicos">Serviços</a>
       <a href="#orcamento">Orçamento</a>
       <a href="#contato">Contato</a>
-      <a href="agendar.html" data-auth-link>Entrar</a>
       <a href="agendar.html" class="btn btn-gold" style="padding:10px 22px">Agendar</a>
     </nav>
     <button class="nav-toggle" id="navToggle" aria-label="Menu">☰</button>
@@ -44,11 +43,11 @@
         <a href="agendar.html" class="btn btn-gold">Agendar horário →</a>
         <a href="#orcamento" class="btn btn-ghost">Pedir orçamento</a>
       </div>
-      <p class="hero-info">Todos os dias, 9h às 18h · (14) 99886-2226</p>
+      <p class="hero-info">Seg a Sex 9h–18h · Sáb 9h–12h · (14) 99886-2226</p>
     </div>
     <div class="hero-visual">
       <div class="hero-frame"><img src="assets/logo.png" alt="TR Atelier — Tatto Fernandes e Re Arfelli"></div>
-      <div class="hero-badge"><small>Próximo horário</small><b>Hoje, 9h às 18h</b></div>
+      <div class="hero-badge"><small>Atendimento</small><b>Seg–Sáb, com hora marcada</b></div>
     </div>
   </div>
 </section>
@@ -122,7 +121,7 @@
     <div class="contact-grid">
       <div class="contact-card"><div class="ic">📍</div><h4>Endereço</h4><p>Rua Liberdade, 537<br>Bairro Maria Isabel, Marília/SP</p></div>
       <div class="contact-card"><div class="ic">📞</div><h4>Telefone</h4><p>(14) 99886-2226</p></div>
-      <div class="contact-card"><div class="ic">🕘</div><h4>Horário</h4><p>Todos os dias<br>9h às 18h</p></div>
+      <div class="contact-card"><div class="ic">🕘</div><h4>Horário</h4><p>Seg a Sex: 9h–18h<br>Sábado: 9h–12h<br>Domingo: fechado</p></div>
       <div class="contact-card"><div class="ic">📸</div><h4>Instagram</h4><p>@tratelier</p></div>
     </div>
   </div>
@@ -140,7 +139,7 @@
         <a href="#servicos">Serviços & preços</a>
         <a href="orcamento.html">Pedir orçamento</a>
         <a href="#contato">Contato & horários</a>
-        <a href="agendar.html" data-auth-link>Entrar / Cadastrar</a>
+        <a href="agendar.html">Agendar horário</a>
       </div>
       <div>
         <h4>Contato</h4>
@@ -166,6 +165,42 @@
   ["fab","waBtn","waFooter"].forEach(function(id){
     var el = document.getElementById(id); if (el) el.href = window.TR.waLink(waText);
   });
+
+  // Carrega os servicos do banco (reflete edicoes feitas no painel do dono)
+  (async function(){
+    if(!window.TR || !window.TR.db) return; // mantem os cards fixos como fallback
+    try{
+      var r = await window.TR.db.from("services").select("*").eq("active",true).order("sort_order");
+      if(r.error || !r.data || !r.data.length) return;
+      var grid = document.getElementById("servicesGrid");
+      grid.innerHTML = r.data.map(function(s){
+        var price = s.price>0 ? window.TR.money(s.price) : "Sob consulta";
+        return '<article class="service-card">'+
+          '<h3>'+s.name+'</h3><p>'+(s.description||"")+'</p>'+
+          '<div class="service-foot"><span class="service-price">'+price+'</span>'+
+          '<span class="service-dur">⏱ '+s.duration_min+' min</span></div>'+
+          '<a class="book" href="agendar.html?s='+s.id+'">Agendar →</a></article>';
+      }).join("");
+    }catch(e){}
+  })();
+
+  // Serviços vindos do banco (refletem as edições feitas no painel)
+  (async function(){
+    function esc(t){return String(t==null?"":t).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
+    if(!window.TR || !window.TR.db) return;
+    try{
+      var r = await window.TR.db.from("services").select("*").eq("active",true).order("sort_order");
+      if(r.error || !r.data || !r.data.length) return;
+      var grid = document.getElementById("servicesGrid");
+      grid.innerHTML = r.data.map(function(s){
+        var price = s.price>0 ? window.TR.money(s.price) : "Sob consulta";
+        return '<article class="service-card"><h3>'+esc(s.name)+'</h3><p>'+esc(s.description||"")+'</p>'+
+          '<div class="service-foot"><span class="service-price">'+price+'</span>'+
+          '<span class="service-dur">⏱ '+s.duration_min+' min</span></div>'+
+          '<a class="book" href="agendar.html?s='+s.id+'">Agendar este serviço →</a></article>';
+      }).join("");
+    }catch(e){}
+  })();
 </script>
 </body>
 </html>

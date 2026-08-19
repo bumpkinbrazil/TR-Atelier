@@ -167,6 +167,9 @@ h1,h2,h3,.serif{font-family:var(--serif);font-weight:600;line-height:1.08;letter
 .summary div span:first-child{color:var(--muted)}
 .summary div b{color:var(--gold);font-family:var(--serif);font-size:1.05rem}
 .hidden{display:none !important}
+.reveal{opacity:0;transform:translateY(18px);transition:opacity .6s ease, transform .6s ease}
+.reveal.in{opacity:1;transform:none}
+@media (prefers-reduced-motion: reduce){.reveal{opacity:1;transform:none;transition:none}}
 .success .check{width:78px;height:78px;border-radius:50%;margin:0 auto 20px;
   background:linear-gradient(135deg,var(--gold-bright),var(--gold-deep));display:grid;place-items:center;font-size:2.4rem;color:#191308}
 .divider{display:flex;align-items:center;gap:14px;color:var(--muted);font-size:.82rem;margin:22px 0}

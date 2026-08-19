@@ -53,14 +53,26 @@
     var user=await TR.getUser();
     if(!user){
       el("gate").innerHTML='<div class="panel" style="max-width:420px"><h2 style="font-family:var(--serif);color:var(--gold);margin-top:0">Área do salão</h2>'+
-        '<p class="muted">Entre com a conta de dono para acessar o painel.</p>'+
-        '<button class="btn btn-google btn-block" id="g" style="margin-top:12px">Entrar com Google</button>'+
-        '<div class="divider">ou email (sem senha)</div>'+
-        '<input id="me" type="email" placeholder="seu@email.com" style="width:100%;padding:12px 14px;background:var(--ink-soft);border:1px solid var(--line-2);border-radius:10px;color:var(--cream)">'+
-        '<button class="btn btn-ghost btn-block" id="ml" style="margin-top:10px">Receber link mágico</button>'+
-        '<p class="muted" id="mm" style="font-size:.82rem"></p></div>';
-      el("g").addEventListener("click",function(){ db.auth.signInWithOAuth({provider:"google",options:{redirectTo:location.href.split("#")[0]}}); });
-      el("ml").addEventListener("click", async function(){ var em=(el("me").value||"").trim(); if(!/.+@.+\..+/.test(em)){el("mm").textContent="Email inválido.";return;} el("ml").disabled=true; var r=await db.auth.signInWithOtp({email:em,options:{emailRedirectTo:location.href.split("#")[0]}}); el("ml").disabled=false; el("mm").textContent=r.error?"Erro ao enviar.":"Link enviado! Confira seu email."; });
+        '<p class="muted">Entre com email e senha para acessar o painel.</p>'+
+        '<div class="field" style="margin-top:12px"><label>Email</label><input id="ae" type="email" placeholder="seu@email.com"></div>'+
+        '<div class="field"><label>Senha</label><input id="ap" type="password" placeholder="mín. 6 caracteres"></div>'+
+        '<button class="btn btn-gold btn-block" id="ain">Entrar</button>'+
+        '<button class="btn btn-ghost btn-block" id="aup" style="margin-top:10px">Criar conta (1ª vez)</button>'+
+        '<p class="muted" id="amsg" style="font-size:.84rem;margin-top:10px"></p></div>';
+      var creds=function(){ return { email:(el("ae").value||"").trim(), password:(el("ap").value||"") }; };
+      var valid=function(c){ return /.+@.+\..+/.test(c.email) && c.password.length>=6; };
+      el("ain").addEventListener("click", async function(){
+        var c=creds(); if(!valid(c)){ el("amsg").textContent="Preencha email e senha (mín. 6)."; return; }
+        el("ain").disabled=true; var r=await db.auth.signInWithPassword(c); el("ain").disabled=false;
+        if(r.error){ el("amsg").textContent="Email ou senha incorretos."; } else { location.reload(); }
+      });
+      el("aup").addEventListener("click", async function(){
+        var c=creds(); if(!valid(c)){ el("amsg").textContent="Preencha email e senha (mín. 6)."; return; }
+        el("aup").disabled=true; var r=await db.auth.signUp(c); el("aup").disabled=false;
+        if(r.error){ el("amsg").textContent="Erro: "+(r.error.message||"tente outro email"); }
+        else if(r.data && r.data.session){ location.reload(); }
+        else { el("amsg").textContent="Conta criada! Se pedir confirmação por email, desative 'Confirm email' no Supabase (Authentication → Sign In / Providers → Email) e clique em Entrar."; }
+      });
       return;
     }
     var { data:isAdmin } = await db.rpc("is_admin");

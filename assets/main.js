@@ -61,5 +61,30 @@
         if (u) entrarLinks.forEach(function (el) { el.textContent = "Minha conta"; el.setAttribute("href", "conta.html"); });
       });
     }
+
+    // Mascara de telefone brasileira nos campos type=tel
+    function maskPhone(v) {
+      v = (v || "").replace(/\D/g, "").slice(0, 11);
+      if (!v) return "";
+      if (v.length <= 2) return "(" + v;
+      if (v.length <= 6) return "(" + v.slice(0, 2) + ") " + v.slice(2);
+      if (v.length <= 10) return "(" + v.slice(0, 2) + ") " + v.slice(2, 6) + "-" + v.slice(6);
+      return "(" + v.slice(0, 2) + ") " + v.slice(2, 7) + "-" + v.slice(7);
+    }
+    document.querySelectorAll('input[type="tel"]').forEach(function (inp) {
+      inp.addEventListener("input", function () { inp.value = maskPhone(inp.value); });
+    });
+
+    // Animacao de entrada ao rolar (revelar). Fallback garante que nada some.
+    var revealSel = ".section-head, .service-card, .step3, .contact-card, .hero-card, .hero-visual";
+    var items = document.querySelectorAll(revealSel);
+    if ("IntersectionObserver" in window && items.length) {
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } });
+      }, { threshold: 0.12 });
+      items.forEach(function (el) { el.classList.add("reveal"); io.observe(el); });
+      // seguranca: revela tudo depois de 1.6s de qualquer forma
+      setTimeout(function () { items.forEach(function (el) { el.classList.add("in"); }); }, 1600);
+    }
   });
 })();

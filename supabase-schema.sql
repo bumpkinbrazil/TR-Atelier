@@ -155,12 +155,6 @@ begin
     return;
   end if;
 
-  select coalesce(
-    (select value from public.settings where key = 'open_time'), '09:00'
-  ) into v_open;
-  select coalesce(
-    (select value from public.settings where key = 'close_time'), '18:00'
-  ) into v_close;
   select greatest(
     coalesce((select value from public.settings where key = 'slot_interval'), '30')::integer, 5
   ) into v_interval;
@@ -168,7 +162,7 @@ begin
     coalesce((select value from public.settings where key = 'capacity'), '1')::integer, 1
   ) into v_capacity;
   select coalesce(
-    (select value from public.settings where key = 'work_days'), '0,1,2,3,4,5,6'
+    (select value from public.settings where key = 'work_days'), '1,2,3,4,5,6'
   ) into v_workdays;
 
   select duration_min
@@ -179,15 +173,26 @@ begin
     return;
   end if;
 
-  v_open_min := split_part(v_open, ':', 1)::integer * 60 + split_part(v_open, ':', 2)::integer;
-  v_close_min := split_part(v_close, ':', 1)::integer * 60 + split_part(v_close, ':', 2)::integer;
-  if v_open_min >= v_close_min then
-    return;
-  end if;
-
   -- 0 = domingo ... 6 = sabado
   v_dow := extract(dow from p_date)::integer;
   if not (',' || v_workdays || ',') like '%,' || v_dow::text || ',%' then
+    return;
+  end if;
+
+  -- horario base (padrao) com override por dia da semana:
+  -- open_time_<dow> / close_time_<dow> (ex.: close_time_6 = sabado)
+  select coalesce(
+    (select value from public.settings where key = 'open_time'), '09:00'
+  ) into v_open;
+  select coalesce(
+    (select value from public.settings where key = 'close_time'), '18:00'
+  ) into v_close;
+  v_open  := coalesce((select value from public.settings where key = 'open_time_'  || v_dow::text), v_open);
+  v_close := coalesce((select value from public.settings where key = 'close_time_' || v_dow::text), v_close);
+
+  v_open_min := split_part(v_open, ':', 1)::integer * 60 + split_part(v_open, ':', 2)::integer;
+  v_close_min := split_part(v_close, ':', 1)::integer * 60 + split_part(v_close, ':', 2)::integer;
+  if v_open_min >= v_close_min then
     return;
   end if;
 
@@ -440,9 +445,11 @@ select * from (
     ('salon_instagram', 'tratelier'),
     ('open_time',       '09:00'),
     ('close_time',      '18:00'),
+    ('open_time_6',     '09:00'),
+    ('close_time_6',    '12:00'),
     ('slot_interval',   '30'),
     ('capacity',        '1'),
-    ('work_days',       '0,1,2,3,4,5,6')
+    ('work_days',       '1,2,3,4,5,6')
 ) as v(key, value)
 on conflict (key) do nothing;
 

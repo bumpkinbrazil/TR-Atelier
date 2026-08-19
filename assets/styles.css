@@ -83,6 +83,25 @@ h1,h2,h3,.serif{font-family:var(--serif);font-weight:600;line-height:1.08;letter
 .hero-badge small{display:block;text-transform:uppercase;letter-spacing:.2em;font-size:.62rem;color:var(--gold-deep)}
 .hero-badge b{font-family:var(--serif);font-size:1.35rem;color:var(--cream)}
 
+/* hero variante A — editorial centralizado */
+.heroA{padding:96px 0 84px;text-align:center}
+.heroA .container{display:block}
+.heroA .mark{width:120px;height:120px;margin:0 auto 24px;border-radius:24px;display:grid;place-items:center;
+  background:linear-gradient(160deg,#1a150d,#0d0a07);border:1px solid var(--line-2)}
+.heroA .mark img{width:74%}
+.heroA .eyebrow{margin-bottom:8px}
+.heroA .loc{text-transform:uppercase;letter-spacing:.28em;font-size:.72rem;font-weight:600;color:var(--muted);margin:0 0 4px}
+.heroA h1{font-size:clamp(2.8rem,6vw,4.8rem);margin:0 auto 18px;max-width:12ch}
+.heroA p.lead{margin-left:auto;margin-right:auto;margin-bottom:12px;max-width:560px;text-align:center}
+.heroA .lead-tag{margin:0 auto 30px;text-align:center;color:var(--gold);font-family:var(--serif);font-style:italic;font-size:1.25rem;letter-spacing:.02em}
+.heroA .hero-actions{justify-content:center}
+.heroA .divider-gold{width:60px;height:2px;margin:0 auto 30px;background:linear-gradient(90deg,transparent,var(--gold),transparent)}
+.heroA .stats{display:flex;gap:0;justify-content:center;flex-wrap:wrap;margin-top:46px}
+.heroA .stats div{padding:0 30px;border-right:1px solid var(--line)}
+.heroA .stats div:last-child{border-right:0}
+.heroA .stats b{font-family:var(--serif);font-size:1.8rem;color:var(--gold);display:block;line-height:1.1}
+.heroA .stats small{color:var(--muted);font-size:.8rem;letter-spacing:.02em}
+
 /* servicos */
 .section-head{max-width:640px;margin:0 auto 52px;text-align:center}
 .section-head h2{font-size:clamp(2rem,4vw,3rem);margin:0 0 12px}
@@ -122,6 +141,11 @@ h1,h2,h3,.serif{font-family:var(--serif);font-weight:600;line-height:1.08;letter
 .field input,.field select,.field textarea{width:100%;padding:13px 15px;background:var(--ink-soft);
   border:1px solid var(--line-2);border-radius:11px;color:var(--cream);font-size:.98rem;font-family:var(--sans);transition:.2s}
 .field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--gold)}
+/* campo de data claro: calendario branco em destaque */
+.field input[type="date"]{color-scheme:light;background:var(--cream);color:#1a1512;font-weight:600;border-color:var(--gold-deep)}
+.field input[type="date"]:focus{border-color:var(--gold)}
+.field input[type="date"]::-webkit-calendar-picker-indicator{cursor:pointer;opacity:.85}
+.field input[type="date"]::-webkit-calendar-picker-indicator:hover{opacity:1}
 .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 .form-msg{padding:13px 16px;border-radius:11px;margin-bottom:16px;font-size:.9rem;display:none}
 .form-msg.show{display:block}

@@ -87,4 +87,29 @@
       setTimeout(function () { items.forEach(function (el) { el.classList.add("in"); }); }, 1600);
     }
   });
+
+  // ---- PWA: manifesto, tema, icone Apple e service worker ----
+  (function () {
+    function addLink(rel, href, attrs) {
+      if (document.querySelector('link[rel="' + rel + '"]')) return;
+      var l = document.createElement("link"); l.rel = rel; l.href = href;
+      if (attrs) Object.keys(attrs).forEach(function (k) { l.setAttribute(k, attrs[k]); });
+      document.head.appendChild(l);
+    }
+    function addMeta(name, content) {
+      if (document.querySelector('meta[name="' + name + '"]')) return;
+      var m = document.createElement("meta"); m.name = name; m.content = content; document.head.appendChild(m);
+    }
+    addLink("manifest", "manifest.webmanifest");
+    addLink("apple-touch-icon", "assets/apple-touch-icon.png");
+    addMeta("theme-color", "#0a0806");
+    addMeta("apple-mobile-web-app-capable", "yes");
+    addMeta("apple-mobile-web-app-status-bar-style", "black-translucent");
+    addMeta("apple-mobile-web-app-title", "TR Atelier");
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", function () {
+        navigator.serviceWorker.register("sw.js").catch(function () {});
+      });
+    }
+  })();
 })();

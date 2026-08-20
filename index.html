@@ -222,10 +222,12 @@
       } else { document.getElementById("ratingSummary").style.display="none"; }
       // cards
       document.getElementById("reviewsGrid").innerHTML = list.map(function(v){
+        var body = v.comment ? '<p>'+esc(v.comment)+'</p>'
+                 : (v.service ? '<p class="rc-service">✂ '+esc(v.service)+'</p>' : '<p></p>');
         return '<article class="review-card">'+
           '<div class="rc-top"><span class="rc-name">'+esc(v.name)+'</span></div>'+
           '<div class="rc-stars stars">'+stars(v.rating)+'</div>'+
-          '<p>'+esc(v.comment||"")+'</p>'+
+          body+
           '<div class="rc-foot"><span class="rc-g"><b>G</b> Avaliação no Google</span>'+
           (v.date_label?'<span>· '+esc(v.date_label)+'</span>':'')+'</div></article>';
       }).join("");

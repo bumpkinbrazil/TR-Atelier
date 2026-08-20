@@ -258,8 +258,10 @@
       '<div class="panel" style="max-width:none;margin-bottom:22px"><h2 style="font-family:var(--serif);margin-top:0">'+(ed?"Editar avaliação":"Adicionar avaliação")+'</h2>'+
       '<div class="grid-2"><div class="field"><label>Nome do cliente</label><input id="r_name" value="'+esc(ed?ed.author_name:"")+'"></div>'+
       '<div class="field"><label>Estrelas (1 a 5)</label><input id="r_rating" type="number" min="1" max="5" value="'+(ed?ed.rating:5)+'"></div></div>'+
-      '<div class="field"><label>Comentário</label><textarea id="r_comment" rows="3" style="width:100%">'+esc(ed?ed.comment:"")+'</textarea></div>'+
-      '<div class="grid-2"><div class="field"><label>Quando (ex.: há 3 meses)</label><input id="r_when" value="'+esc(ed?ed.date_label:"")+'" placeholder="há 3 meses"></div>'+
+      '<div class="field"><label>Comentário (deixe vazio se a pessoa só deu estrelas)</label><textarea id="r_comment" rows="3" style="width:100%">'+esc(ed?ed.comment:"")+'</textarea></div>'+
+      '<div class="grid-2"><div class="field"><label>Serviço (opcional)</label><input id="r_service" value="'+esc(ed?ed.service:"")+'" placeholder="Corte de cabelo"></div>'+
+      '<div class="field"><label>Quando (ex.: há 3 meses)</label><input id="r_when" value="'+esc(ed?ed.date_label:"")+'" placeholder="há 3 meses"></div></div>'+
+      '<div class="grid-2">'+
       '<div class="field"><label>Ordem</label><input id="r_ord" type="number" value="'+(ed?ed.sort_order:0)+'"></div></div>'+
       '<div class="field"><label style="color:var(--cream)"><input type="checkbox" id="r_ap" '+(!ed||ed.approved?"checked":"")+'> Mostrar no site</label></div>'+
       '<button class="btn btn-gold" id="r_save">'+(ed?"Salvar":"Adicionar")+'</button> '+(ed?'<button class="btn btn-ghost" id="r_cancel">Cancelar</button>':'')+'</div>'+
@@ -276,7 +278,8 @@
     el("r_save").addEventListener("click", async function(){
       var rt=parseInt(el("r_rating").value)||5; if(rt<1)rt=1; if(rt>5)rt=5;
       var payload={author_name:(el("r_name").value||"").trim(), rating:rt,
-        comment:(el("r_comment").value||"").trim(), date_label:(el("r_when").value||"").trim(),
+        comment:(el("r_comment").value||"").trim(), service:(el("r_service").value||"").trim(),
+        date_label:(el("r_when").value||"").trim(),
         sort_order:parseInt(el("r_ord").value)||0, approved:el("r_ap").checked, source:(ed?ed.source:"google")};
       if(payload.author_name.length<2){ alert("Informe o nome do cliente."); return; }
       if(ed){ await db.from("reviews").update(payload).eq("id",ed.id); } else { await db.from("reviews").insert(payload); }

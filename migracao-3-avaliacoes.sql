@@ -10,12 +10,15 @@ create table if not exists public.reviews (
   author_name text not null check (length(trim(author_name)) >= 2),
   rating int not null default 5 check (rating between 1 and 5),
   comment text not null default '',
+  service text not null default '',           -- ex.: "Corte de cabelo" (opcional)
   date_label text not null default '',        -- ex.: "há 3 meses" (texto livre)
   source text not null default 'google',      -- google | site
   approved boolean not null default true,      -- aparece no site
   sort_order int not null default 0,
   created_at timestamptz not null default now()
 );
+-- garante a coluna service mesmo se a tabela ja existir de uma versao anterior
+alter table public.reviews add column if not exists service text not null default '';
 create index if not exists reviews_show_idx on public.reviews (approved, sort_order);
 
 -- ---------- Config do Google (na tabela settings) ----------
@@ -27,11 +30,13 @@ insert into public.settings (key, value) values
   ('google_url', 'https://share.google/0EsGS5G66D0xx7AQX') on conflict (key) do nothing;
 
 -- ---------- Seed: avaliacoes reais do Google (so' na primeira vez) ----------
-insert into public.reviews (author_name, rating, comment, date_label, source, sort_order)
+insert into public.reviews (author_name, rating, comment, service, date_label, source, sort_order)
 select * from (values
-  ('Luciana Rovigatti', 5, 'Corto o cabelo com o Tatto há anos! É um profissional renomado, de extrema qualidade em seus serviços. Só usam produtos top de linha e sempre estão antenados com as tendências.', 'há 10 meses', 'google', 1),
-  ('Angelo Breda', 5, 'Profissionais! Muito bom!', 'há 4 meses', 'google', 2)
-) as v(author_name, rating, comment, date_label, source, sort_order)
+  ('Luciana Rovigatti', 5, 'Corto o cabelo com o Tatto há anos! É um profissional renomado, de extrema qualidade em seus serviços. Só usam produtos top de linha e sempre estão antenados com as tendências.', '', 'há 10 meses', 'google', 1),
+  ('Angelo Breda', 5, 'Profissionais! Muito bom!', '', 'há 4 meses', 'google', 2),
+  ('Bruno La Marca', 5, '', 'Corte de cabelo', 'há 1 ano', 'google', 3),
+  ('Mariana Murback', 5, '', 'Corte de cabelo', 'há 1 ano', 'google', 4)
+) as v(author_name, rating, comment, service, date_label, source, sort_order)
 where not exists (select 1 from public.reviews);
 
 -- ---------- Funcao publica: retorna avaliacoes aprovadas + nota do Google ----------
@@ -48,7 +53,7 @@ begin
   select value into v_count  from public.settings where key = 'google_count';
   select value into v_url    from public.settings where key = 'google_url';
   select json_agg(t) into v_list from (
-    select author_name as name, rating, comment, date_label, source
+    select author_name as name, rating, comment, service, date_label, source
     from public.reviews
     where approved = true
     order by sort_order, created_at desc

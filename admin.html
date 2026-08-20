@@ -177,7 +177,11 @@
         '<div class="grid-2"><div class="field"><label>Serviço</label><select id="na_serv">'+sOpts+'</select></div>'+
         '<div class="field"><label>Profissional</label><select id="na_pro">'+pOpts+'</select></div></div>'+
         '<div class="grid-2"><div class="field"><label>Data</label><input id="na_date" type="date" value="'+todayStr+'"></div>'+
-        '<div class="field"><label>Horário</label><input id="na_time" type="time" value="09:00"></div></div>'+
+        '<div class="field"><label>Horário</label>'+
+          '<select id="na_time"><option value="">Escolha serviço e data…</option></select>'+
+          '<input id="na_time_free" type="time" value="09:00" style="display:none">'+
+          '<label class="ag-chk" style="margin-top:8px"><input type="checkbox" id="na_force"> Encaixar fora da lista (forçar horário)</label>'+
+        '</div></div>'+
         '<div class="field"><label>Observações (opcional)</label><input id="na_notes"></div>'+
         '<button class="btn btn-gold" id="na_save">Lançar agendamento</button> <span class="muted" id="na_msg" style="margin-left:10px"></span></div>';
     }
@@ -214,15 +218,49 @@
         tr.style.display = hit ? "" : "none";
       });
     });
+    // agendamento manual: carregar horários realmente livres
+    async function loadManualSlots(){
+      if(!agNew || !el("na_time")) return;
+      var force=el("na_force") && el("na_force").checked;
+      el("na_time").style.display = force ? "none" : "";
+      el("na_time_free").style.display = force ? "" : "none";
+      if(force) return;
+      var sel=el("na_time"), sv=el("na_serv").value, dt=el("na_date").value, pr=el("na_pro").value||null;
+      sel.innerHTML='<option value="">Carregando…</option>';
+      if(!sv||!dt){ sel.innerHTML='<option value="">Escolha serviço e data…</option>'; return; }
+      var r=await db.rpc("get_available_slots",{ p_service_id:sv, p_date:dt, p_professional_id:pr });
+      var slots=(r&&r.data)||[];
+      if(r.error || !slots.length){ sel.innerHTML='<option value="">Nenhum horário livre nesse dia</option>'; return; }
+      sel.innerHTML=slots.map(function(t){return '<option value="'+t+'">'+t+'</option>';}).join("");
+    }
+    if(agNew && el("na_serv")){
+      ["na_serv","na_date","na_pro"].forEach(function(id){ el(id).addEventListener("change",loadManualSlots); });
+      if(el("na_force")) el("na_force").addEventListener("change",loadManualSlots);
+      loadManualSlots();
+    }
     // salvar novo agendamento
     if(agNew && el("na_save")) el("na_save").addEventListener("click", async function(){
-      var msg=el("na_msg");
-      var r=await db.rpc("admin_create_appointment",{
-        p_service_id:el("na_serv").value, p_professional_id:(el("na_pro").value||null),
-        p_name:(el("na_name").value||"").trim(), p_phone:(el("na_phone").value||"").trim(),
-        p_date:el("na_date").value, p_time:el("na_time").value, p_status:"confirmado",
-        p_notes:(el("na_notes").value||"").trim()
-      });
+      var msg=el("na_msg"); var force=el("na_force")&&el("na_force").checked;
+      var time = force ? el("na_time_free").value : el("na_time").value;
+      if(!time){ msg.textContent="Selecione um horário disponível (ou marque “forçar”)."; return; }
+      el("na_save").disabled=true;
+      var r;
+      if(force){
+        // encaixe manual: cria mesmo fora da lista
+        r=await db.rpc("admin_create_appointment",{
+          p_service_id:el("na_serv").value, p_professional_id:(el("na_pro").value||null),
+          p_name:(el("na_name").value||"").trim(), p_phone:(el("na_phone").value||"").trim(),
+          p_date:el("na_date").value, p_time:time, p_status:"confirmado",
+          p_notes:(el("na_notes").value||"").trim() });
+      } else {
+        // caminho validado: mesma checagem do cliente (sem choque de horário)
+        r=await db.rpc("book_appointment",{
+          p_service_id:el("na_serv").value, p_name:(el("na_name").value||"").trim(),
+          p_phone:(el("na_phone").value||"").trim(), p_date:el("na_date").value, p_time:time,
+          p_professional_id:(el("na_pro").value||null), p_email:"", p_notes:(el("na_notes").value||"").trim() });
+        if(r&&r.data&&r.data.ok&&r.data.id){ await db.from("appointments").update({status:"confirmado"}).eq("id",r.data.id); }
+      }
+      el("na_save").disabled=false;
       if(r.error || !r.data || !r.data.ok){ msg.textContent=(r.data&&r.data.error)||"Não foi possível lançar."; return; }
       agNew=false; renderAgenda(); renderRelatorios();
     });

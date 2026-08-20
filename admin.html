@@ -48,6 +48,7 @@
 (function(){
   "use strict";
   var TR=window.TR, db=TR.db;
+  var currentUserId=null;
   var el=function(id){return document.getElementById(id);};
   var esc=function(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});};
   var badge={pendente:"b-pendente",confirmado:"b-confirmado",concluido:"b-concluido",cancelado:"b-cancelado",faltou:"b-faltou",novo:"b-novo",respondido:"b-confirmado",fechado:"b-concluido"};
@@ -59,6 +60,7 @@
   async function gate(){
     if(!TR.configured){ el("gate").innerHTML='<div class="panel"><p class="muted">Conecte o Supabase em <b>assets/config.js</b> para usar o painel.</p></div>'; return; }
     var user=await TR.getUser();
+    if(user) currentUserId=user.id;
     if(!user){
       el("gate").innerHTML='<div class="panel" style="max-width:420px"><h2 style="font-family:var(--serif);color:var(--gold);margin-top:0">Área do salão</h2>'+
         '<p class="muted">Entre com email e senha para acessar o painel.</p>'+
@@ -86,7 +88,7 @@
     var { data:isAdmin } = await db.rpc("is_admin");
     if(!isAdmin){
       el("gate").innerHTML='<div class="panel" style="max-width:520px"><h2 style="font-family:var(--serif);color:var(--gold);margin-top:0">Sem permissão</h2>'+
-        '<p class="muted">Esta conta ('+esc(user.email)+') ainda não é administradora.<br><br>No Supabase → Table Editor → <b>admins</b> → Insert row, cole seu <b>user id</b> (Authentication → Users). Depois recarregue.</p>'+
+        '<p class="muted">Esta conta ('+esc(user.email)+') ainda não é administradora.<br><br>Peça para um administrador atual aprovar seu acesso no painel, em <b>Configurações → Administradores</b>. Depois recarregue esta página.</p>'+
         '<button class="btn btn-ghost" id="out">Trocar de conta</button></div>';
       el("out").addEventListener("click", async function(){ await db.auth.signOut(); location.reload(); });
       return;
@@ -349,7 +351,8 @@
       '<div class="grid-2">'+f("open_time","Abre (HH:MM)","09:00")+f("close_time","Fecha (HH:MM)","18:00")+
       f("slot_interval","Intervalo entre horários (min)","30")+f("capacity","Atendimentos simultâneos","1")+'</div>'+
       '<div class="field"><label>Dias de atendimento</label><div>'+dayboxes+'</div></div></div>'+
-      '<button class="btn btn-gold" id="cfg_save">Salvar configurações</button> <span class="muted" id="cfg_msg" style="margin-left:10px"></span>';
+      '<button class="btn btn-gold" id="cfg_save">Salvar configurações</button> <span class="muted" id="cfg_msg" style="margin-left:10px"></span>'+
+      '<div id="adminmgr"></div>';
     el("cfg_save").addEventListener("click", async function(){
       var keys=["salon_name","salon_tagline","salon_phone","salon_whatsapp","salon_address","salon_instagram","open_time","close_time","slot_interval","capacity"];
       var rows=keys.map(function(k){ return {key:k, value:(el("cfg_"+k).value||"").trim()}; });
@@ -358,6 +361,44 @@
       var { error } = await db.from("settings").upsert(rows);
       el("cfg_msg").textContent = error ? "Erro ao salvar." : "Salvo! ✓";
     });
+    loadAdmins();
+  }
+
+  // ---------- ADMINISTRADORES (máx. 2) ----------
+  async function loadAdmins(){
+    var box=el("adminmgr"); if(!box) return;
+    var r=await db.rpc("list_admins");
+    if(r.error || !r.data || !r.data.ok){
+      box.innerHTML='<div class="panel" style="max-width:none;margin-top:22px"><h2 style="font-family:var(--serif);margin-top:0">Administradores</h2>'+
+        '<p class="muted">Recurso não disponível ainda. Rode a <b>migração 5</b> no Supabase para ativar.</p></div>';
+      return;
+    }
+    var d=r.data, ad=d.admins||[], pend=d.pending||[], lim=d.limit||2;
+    var adRows=ad.map(function(u){
+      var self=u.id===currentUserId;
+      return '<tr><td>'+esc(u.email)+'</td>'+
+        '<td>'+(self?'<span class="badge b-confirmado">você</span>':'<span class="badge b-confirmado">admin</span>')+'</td>'+
+        '<td>'+((!self && ad.length>1)?'<button class="btn btn-sm" data-revoke="'+u.id+'">Remover</button>':'')+'</td></tr>';
+    }).join("");
+    var canAdd = ad.length < lim;
+    var pendRows = pend.map(function(u){
+      return '<tr><td>'+esc(u.email)+'</td><td><button class="btn btn-sm btn-gold" data-grant="'+u.id+'">Tornar administrador</button></td></tr>';
+    }).join("");
+    box.innerHTML='<div class="panel" style="max-width:none;margin-top:22px"><h2 style="font-family:var(--serif);margin-top:0">Administradores ('+ad.length+' de '+lim+')</h2>'+
+      '<p class="muted" style="margin:0 0 12px;font-size:.86rem">Máximo de '+lim+' administradores. Para adicionar outro: peça para a pessoa criar a conta na tela de login (botão “Criar conta (1ª vez)”), depois clique em “Tornar administrador” aqui.</p>'+
+      '<div class="table-wrap"><table><thead><tr><th>E-mail</th><th>Status</th><th></th></tr></thead><tbody>'+adRows+'</tbody></table></div>'+
+      (canAdd
+        ? '<h3 style="font-family:var(--serif);margin:18px 0 8px">Contas aguardando aprovação</h3>'+
+          (pend.length?'<div class="table-wrap"><table><thead><tr><th>E-mail</th><th></th></tr></thead><tbody>'+pendRows+'</tbody></table></div>'
+                       :'<p class="muted" style="font-size:.86rem">Nenhuma conta nova. Peça para a pessoa criar a conta primeiro na tela de login.</p>')
+        : '<p class="muted" style="font-size:.86rem">✓ Limite de '+lim+' administradores atingido.</p>')+
+      '</div>';
+    box.querySelectorAll("[data-grant]").forEach(function(b){ b.addEventListener("click", async function(){ b.disabled=true;
+      var rr=await db.rpc("grant_admin",{p_user_id:b.dataset.grant});
+      if(rr.error||!rr.data||!rr.data.ok){ alert((rr.data&&rr.data.error)||"Não foi possível."); b.disabled=false; return; } loadAdmins(); }); });
+    box.querySelectorAll("[data-revoke]").forEach(function(b){ b.addEventListener("click", async function(){ if(!confirm("Remover este administrador?"))return; b.disabled=true;
+      var rr=await db.rpc("revoke_admin",{p_user_id:b.dataset.revoke});
+      if(rr.error||!rr.data||!rr.data.ok){ alert((rr.data&&rr.data.error)||"Não foi possível."); b.disabled=false; return; } loadAdmins(); }); });
   }
 
   // ---------- AVALIAÇÕES ----------

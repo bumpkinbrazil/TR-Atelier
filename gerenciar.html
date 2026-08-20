@@ -67,6 +67,22 @@
           '<a class="btn btn-gold" href="agendar.html">Remarcar (novo horário)</a></div>'+
           '<p class="muted center" id="msg" style="margin-top:14px;font-size:.85rem">Para remarcar, cancele este e faça um novo — assim seu horário volta a ficar livre pra outra pessoa.</p>');
 
+    // Convite para avaliar no Google (aparece para agendamentos concluídos ou ativos)
+    if(!cancelado){
+      try{
+        var gr = await db.rpc("get_reviews",{ p_limit:1 });
+        var gurl = gr && gr.data && gr.data.url;
+        if(gurl){
+          var invite=document.createElement("div");
+          invite.className="center";
+          invite.style.marginTop="22px";
+          invite.innerHTML='<p class="muted" style="font-size:.88rem;margin:0 0 10px">Gostou do atendimento? Sua avaliação ajuda muito! ⭐</p>'+
+            '<a class="btn btn-gold" href="'+esc(gurl)+'" target="_blank" rel="noopener">Avaliar no Google ★</a>';
+          box.appendChild(invite);
+        }
+      }catch(e){}
+    }
+
     var bc=document.getElementById("btnCancel");
     if(bc) bc.addEventListener("click", async function(){
       if(!confirm("Tem certeza que quer cancelar este agendamento?")) return;

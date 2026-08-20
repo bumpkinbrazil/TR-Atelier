@@ -24,6 +24,7 @@
     </a>
     <nav class="nav-links" id="navLinks">
       <a href="#servicos">Serviços</a>
+      <a href="#avaliacoes">Avaliações</a>
       <a href="#orcamento">Orçamento</a>
       <a href="#contato">Contato</a>
       <a href="agendar.html" class="btn btn-gold" style="padding:10px 22px">Agendar</a>
@@ -37,10 +38,9 @@
   <div class="container">
     <div class="mark"><img src="assets/logo.png" alt="TR Atelier — Tatto Fernandes e Re Arfelli"></div>
     <p class="eyebrow">Tatto Fernandes e Re Arfelli</p>
-    <h1>Sua beleza<em>no tempo certo</em></h1>
+    <h1>Sua melhor versão<em>começa aqui</em></h1>
     <div class="divider-gold"></div>
-    <p class="lead">No TR Atelier você agenda cortes, barba e procedimentos em segundos — o melhor atendimento de Marília-SP.</p>
-    <p class="lead-tag">Prático, direto e sem filas.</p>
+    <p class="lead">No TR Atelier você agenda cortes, barba e procedimentos em segundos — o melhor atendimento de Marília-SP.<br>Prático, direto e sem filas.</p>
     <div class="hero-actions">
       <a href="agendar.html" class="btn btn-gold">Agendar horário →</a>
       <a href="#orcamento" class="btn btn-ghost">Pedir orçamento</a>
@@ -48,7 +48,7 @@
     <div class="stats">
       <div><b>4+</b><small>Serviços</small></div>
       <div><b>Seg–Sáb</b><small>9h às 18h</small></div>
-      <div><b>100%</b><small>Online</small></div>
+      <div><b>100%</b><small>Agendamento online</small></div>
     </div>
   </div>
 </section>
@@ -97,6 +97,21 @@
       <div class="step3"><h3>Escolha o serviço</h3><p>Veja os preços e selecione o que você quer fazer.</p></div>
       <div class="step3"><h3>Pegue um horário livre</h3><p>Só aparecem os horários realmente disponíveis. Confirme em um toque.</p></div>
       <div class="step3"><h3>Compareça no salão</h3><p>Você recebe a confirmação e pode gerenciar seus horários quando quiser.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- AVALIACOES -->
+<section class="section" id="avaliacoes" style="display:none;padding-top:0">
+  <div class="container">
+    <div class="section-head">
+      <p class="eyebrow">Avaliações</p>
+      <h2>O que dizem nossos clientes</h2>
+      <div class="rating-summary" id="ratingSummary"></div>
+    </div>
+    <div class="reviews-grid" id="reviewsGrid"></div>
+    <div class="reviews-cta">
+      <a href="#" class="btn btn-gold" id="reviewCta" target="_blank" rel="noopener">Avaliar no Google ★</a>
     </div>
   </div>
 </section>
@@ -182,6 +197,42 @@
           '<span class="service-dur">⏱ '+s.duration_min+' min</span></div>'+
           '<a class="book" href="agendar.html?s='+s.id+'">Agendar →</a></article>';
       }).join("");
+    }catch(e){}
+  })();
+
+  // Avaliações (vitrine do Google)
+  (async function(){
+    function esc(t){return String(t==null?"":t).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
+    function stars(n){ n=Math.round(n||0); var s=""; for(var i=1;i<=5;i++){ s+= i<=n?"★":'<span class="off">★</span>'; } return s; }
+    if(!window.TR || !window.TR.db) return;
+    try{
+      var r = await window.TR.db.rpc("get_reviews",{ p_limit:9 });
+      if(r.error || !r.data || !r.data.ok) return;
+      var d=r.data, list=d.reviews||[];
+      if(!list.length && !d.rating) return; // nada a mostrar
+      var sec=document.getElementById("avaliacoes");
+      // resumo (nota do Google)
+      if(d.rating){
+        var rr=parseFloat(String(d.rating).replace(",","."))||0;
+        document.getElementById("ratingSummary").innerHTML =
+          '<span class="big">'+esc(String(d.rating).replace(".",","))+'</span>'+
+          '<span><span class="rs-stars stars">'+stars(rr)+'</span>'+
+          '<span class="rs-info" style="display:block">'+(d.count?esc(d.count)+' avaliações no ':'')+
+          '<a href="'+esc(d.url||"#")+'" target="_blank" rel="noopener">Google</a></span></span>';
+      } else { document.getElementById("ratingSummary").style.display="none"; }
+      // cards
+      document.getElementById("reviewsGrid").innerHTML = list.map(function(v){
+        return '<article class="review-card">'+
+          '<div class="rc-top"><span class="rc-name">'+esc(v.name)+'</span></div>'+
+          '<div class="rc-stars stars">'+stars(v.rating)+'</div>'+
+          '<p>'+esc(v.comment||"")+'</p>'+
+          '<div class="rc-foot"><span class="rc-g"><b>G</b> Avaliação no Google</span>'+
+          (v.date_label?'<span>· '+esc(v.date_label)+'</span>':'')+'</div></article>';
+      }).join("");
+      // botao avaliar
+      var cta=document.getElementById("reviewCta");
+      if(d.url){ cta.href=d.url; } else { cta.style.display="none"; }
+      sec.style.display=""; // revela a secao
     }catch(e){}
   })();
 

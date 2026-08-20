@@ -17,6 +17,7 @@
       <a data-tab="relatorios">Relatórios</a>
       <a data-tab="profissionais">Profissionais</a>
       <a data-tab="bloqueios">Bloqueios</a>
+      <a data-tab="avaliacoes">Avaliações</a>
       <a data-tab="servicos">Serviços & Preços</a>
       <a data-tab="orcamentos">Orçamentos</a>
       <a data-tab="config">Configurações</a>
@@ -33,6 +34,7 @@
     <div class="tabpane" id="pane-relatorios"></div>
     <div class="tabpane" id="pane-profissionais"></div>
     <div class="tabpane" id="pane-bloqueios"></div>
+    <div class="tabpane" id="pane-avaliacoes"></div>
     <div class="tabpane" id="pane-servicos"></div>
     <div class="tabpane" id="pane-orcamentos"></div>
     <div class="tabpane" id="pane-config"></div>
@@ -90,7 +92,7 @@
       return;
     }
     el("gate").classList.add("hidden"); el("app").classList.remove("hidden"); el("tabs").classList.remove("hidden");
-    setupTabs(); renderAgenda(); renderRelatorios(); renderProfissionais(); renderBloqueios(); renderServicos(); renderOrcamentos(); renderConfig();
+    setupTabs(); renderAgenda(); renderRelatorios(); renderProfissionais(); renderBloqueios(); renderAvaliacoes(); renderServicos(); renderOrcamentos(); renderConfig();
   }
 
   function setupTabs(){
@@ -227,6 +229,65 @@
     });
   }
 
+  // ---------- AVALIAÇÕES ----------
+  var editRevId=null;
+  async function renderAvaliacoes(){
+    var pane=el("pane-avaliacoes");
+    var cfg=(await db.from("settings").select("*")).data||[];
+    var m={}; cfg.forEach(function(r){ m[r.key]=r.value; });
+    var revs=(await db.from("reviews").select("*").order("sort_order").order("created_at",{ascending:false})).data||[];
+    var ed = editRevId ? revs.filter(function(r){return r.id===editRevId;})[0] : null;
+    function starsTxt(n){ n=parseInt(n)||0; var s=""; for(var i=0;i<5;i++)s+=i<n?"★":"☆"; return s; }
+    var rows=revs.map(function(r){
+      return '<tr><td>'+r.sort_order+'</td><td><b>'+esc(r.author_name)+'</b>'+(r.date_label?'<br><span class="muted" style="font-size:.78rem">'+esc(r.date_label)+'</span>':'')+'</td>'+
+        '<td style="color:var(--gold);white-space:nowrap">'+starsTxt(r.rating)+'</td>'+
+        '<td><span class="muted" style="font-size:.85rem">'+esc((r.comment||"").slice(0,80))+((r.comment||"").length>80?"…":"")+'</span></td>'+
+        '<td>'+(r.approved?'<span class="badge b-confirmado">No site</span>':'<span class="badge b-cancelado">Oculta</span>')+'</td>'+
+        '<td><div class="row-actions">'+
+        '<button class="btn btn-sm" data-toggr="'+r.id+'" data-ap="'+(r.approved?0:1)+'">'+(r.approved?"Ocultar":"Mostrar")+'</button>'+
+        '<button class="btn btn-sm" data-edr="'+r.id+'">Editar</button>'+
+        '<button class="btn btn-sm" data-delr="'+r.id+'">Excluir</button></div></td></tr>';
+    }).join("");
+    pane.innerHTML='<h1 style="font-family:var(--serif);font-size:1.9rem;margin:0 0 6px">Avaliações</h1>'+
+      '<p class="muted" style="margin:0 0 22px">Mostre as avaliações do Google na página inicial. O botão “Avaliar no Google” leva o cliente direto pro seu perfil.</p>'+
+      '<div class="panel" style="max-width:none;margin-bottom:22px"><h2 style="font-family:var(--serif);margin-top:0">Nota do Google (aparece no resumo)</h2>'+
+      '<div class="grid-2"><div class="field"><label>Nota (ex.: 4.6)</label><input id="g_rating" value="'+esc(m.google_rating||"")+'" placeholder="4.6"></div>'+
+      '<div class="field"><label>Nº de avaliações</label><input id="g_count" value="'+esc(m.google_count||"")+'" placeholder="9"></div></div>'+
+      '<div class="field"><label>Link do Google (botão “Avaliar no Google”)</label><input id="g_url" value="'+esc(m.google_url||"")+'" placeholder="https://g.page/... ou link do seu perfil"></div>'+
+      '<button class="btn btn-gold" id="g_save">Salvar nota do Google</button> <span class="muted" id="g_msg" style="margin-left:10px"></span></div>'+
+      '<div class="panel" style="max-width:none;margin-bottom:22px"><h2 style="font-family:var(--serif);margin-top:0">'+(ed?"Editar avaliação":"Adicionar avaliação")+'</h2>'+
+      '<div class="grid-2"><div class="field"><label>Nome do cliente</label><input id="r_name" value="'+esc(ed?ed.author_name:"")+'"></div>'+
+      '<div class="field"><label>Estrelas (1 a 5)</label><input id="r_rating" type="number" min="1" max="5" value="'+(ed?ed.rating:5)+'"></div></div>'+
+      '<div class="field"><label>Comentário</label><textarea id="r_comment" rows="3" style="width:100%">'+esc(ed?ed.comment:"")+'</textarea></div>'+
+      '<div class="grid-2"><div class="field"><label>Quando (ex.: há 3 meses)</label><input id="r_when" value="'+esc(ed?ed.date_label:"")+'" placeholder="há 3 meses"></div>'+
+      '<div class="field"><label>Ordem</label><input id="r_ord" type="number" value="'+(ed?ed.sort_order:0)+'"></div></div>'+
+      '<div class="field"><label style="color:var(--cream)"><input type="checkbox" id="r_ap" '+(!ed||ed.approved?"checked":"")+'> Mostrar no site</label></div>'+
+      '<button class="btn btn-gold" id="r_save">'+(ed?"Salvar":"Adicionar")+'</button> '+(ed?'<button class="btn btn-ghost" id="r_cancel">Cancelar</button>':'')+'</div>'+
+      '<div class="panel" style="max-width:none"><table><thead><tr><th>Ordem</th><th>Cliente</th><th>Nota</th><th>Comentário</th><th>Status</th><th>Ações</th></tr></thead><tbody>'+
+      (revs.length?rows:'<tr><td colspan="6" class="muted center">Nenhuma avaliação ainda.</td></tr>')+'</tbody></table></div>';
+
+    el("g_save").addEventListener("click", async function(){
+      var rows2=[{key:"google_rating",value:(el("g_rating").value||"").trim()},
+                 {key:"google_count",value:(el("g_count").value||"").trim()},
+                 {key:"google_url",value:(el("g_url").value||"").trim()}];
+      var { error }=await db.from("settings").upsert(rows2);
+      el("g_msg").textContent = error ? "Erro ao salvar." : "Salvo! ✓";
+    });
+    el("r_save").addEventListener("click", async function(){
+      var rt=parseInt(el("r_rating").value)||5; if(rt<1)rt=1; if(rt>5)rt=5;
+      var payload={author_name:(el("r_name").value||"").trim(), rating:rt,
+        comment:(el("r_comment").value||"").trim(), date_label:(el("r_when").value||"").trim(),
+        sort_order:parseInt(el("r_ord").value)||0, approved:el("r_ap").checked, source:(ed?ed.source:"google")};
+      if(payload.author_name.length<2){ alert("Informe o nome do cliente."); return; }
+      if(ed){ await db.from("reviews").update(payload).eq("id",ed.id); } else { await db.from("reviews").insert(payload); }
+      editRevId=null; renderAvaliacoes();
+    });
+    if(el("r_cancel")) el("r_cancel").addEventListener("click",function(){ editRevId=null; renderAvaliacoes(); });
+    pane.querySelectorAll("[data-toggr]").forEach(function(b){ b.addEventListener("click", async function(){ b.disabled=true; await db.from("reviews").update({approved:b.dataset.ap==="1"}).eq("id",b.dataset.toggr); renderAvaliacoes(); }); });
+    pane.querySelectorAll("[data-edr]").forEach(function(b){ b.addEventListener("click",function(){ editRevId=b.dataset.edr; renderAvaliacoes(); window.scrollTo({top:0,behavior:"smooth"}); }); });
+    pane.querySelectorAll("[data-delr]").forEach(function(b){ b.addEventListener("click", async function(){ if(!confirm("Excluir esta avaliação?"))return; await db.from("reviews").delete().eq("id",b.dataset.delr); renderAvaliacoes(); }); });
+  }
+
   // ---------- PROFISSIONAIS ----------
   var editProId=null;
   async function renderProfissionais(){
@@ -245,15 +306,14 @@
       '<div class="panel" style="max-width:none;margin-bottom:22px"><h2 style="font-family:var(--serif);margin-top:0">'+(ed?"Editar profissional":"Novo profissional")+'</h2>'+
       '<div class="grid g2"><div class="field"><label>Nome</label><input id="p_name" value="'+esc(ed?ed.name:"")+'"></div>'+
       '<div class="field"><label>Função (opcional)</label><input id="p_role" value="'+esc(ed?ed.role:"")+'" placeholder="Cabeleireiro(a), Barbeiro..."></div></div>'+
-      '<div class="grid g2"><div class="field"><label>Ordem</label><input id="p_ord" type="number" value="'+(ed?ed.sort_order:0)+'"></div>'+
-      '<div class="field"><label>&nbsp;</label><label style="color:var(--cream)"><input type="checkbox" id="p_act" '+(!ed||ed.active?"checked":"")+'> Ativo</label></div></div>'+
+      '<div class="field"><label>Ordem</label><input id="p_ord" type="number" value="'+(ed?ed.sort_order:0)+'"></div>'+
       '<button class="btn btn-gold" id="p_save">'+(ed?"Salvar":"Adicionar")+'</button> '+(ed?'<button class="btn btn-ghost" id="p_cancel">Cancelar</button>':'')+'</div>'+
       '<div class="panel" style="max-width:none"><table><thead><tr><th>Ordem</th><th>Nome</th><th>Função</th><th>Status</th><th>Ações</th></tr></thead><tbody>'+
       (data.length?rows:'<tr><td colspan="5" class="muted center">Nenhum profissional ainda.</td></tr>')+'</tbody></table></div>';
 
     el("p_save").addEventListener("click", async function(){
       var payload={name:(el("p_name").value||"").trim(), role:(el("p_role").value||"").trim(),
-        sort_order:parseInt(el("p_ord").value)||0, active:el("p_act").checked};
+        sort_order:parseInt(el("p_ord").value)||0, active:(ed?ed.active:true)};
       if(payload.name.length<2){ alert("Informe o nome."); return; }
       if(ed){ await db.from("professionals").update(payload).eq("id",ed.id); } else { await db.from("professionals").insert(payload); }
       editProId=null; renderProfissionais();

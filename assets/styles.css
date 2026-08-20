@@ -91,9 +91,8 @@ h1,h2,h3,.serif{font-family:var(--serif);font-weight:600;line-height:1.08;letter
 .heroA .mark img{width:74%}
 .heroA .eyebrow{margin-bottom:8px}
 .heroA .loc{text-transform:uppercase;letter-spacing:.28em;font-size:.72rem;font-weight:600;color:var(--muted);margin:0 0 4px}
-.heroA h1{font-size:clamp(2.8rem,6vw,4.8rem);margin:0 auto 18px;max-width:12ch}
-.heroA p.lead{margin-left:auto;margin-right:auto;margin-bottom:12px;max-width:560px;text-align:center}
-.heroA .lead-tag{margin:0 auto 30px;text-align:center;color:var(--gold);font-family:var(--serif);font-style:italic;font-size:1.25rem;letter-spacing:.02em}
+.heroA h1{font-size:clamp(2.6rem,5.4vw,4.4rem);margin:0 auto 18px;max-width:18ch}
+.heroA p.lead{margin-left:auto;margin-right:auto;margin-bottom:30px;max-width:560px;text-align:center}
 .heroA .hero-actions{justify-content:center}
 .heroA .divider-gold{width:60px;height:2px;margin:0 auto 30px;background:linear-gradient(90deg,transparent,var(--gold),transparent)}
 .heroA .stats{display:flex;gap:0;justify-content:center;flex-wrap:wrap;margin-top:46px}
@@ -125,6 +124,26 @@ h1,h2,h3,.serif{font-family:var(--serif);font-weight:600;line-height:1.08;letter
   opacity:.5;display:block;margin-bottom:8px}
 .step3 h3{font-size:1.3rem;margin:0 0 8px}
 .step3 p{color:var(--muted);font-size:.92rem;margin:0}
+
+/* avaliacoes */
+.rating-summary{display:inline-flex;align-items:center;gap:14px;margin-top:18px;background:var(--card);
+  border:1px solid var(--line-2);border-radius:999px;padding:12px 22px}
+.rating-summary .big{font-family:var(--serif);font-size:2.1rem;color:var(--gold);line-height:1}
+.rating-summary .rs-stars{font-size:1.05rem;letter-spacing:2px;line-height:1}
+.rating-summary .rs-info{font-size:.82rem;color:var(--muted);text-align:left}
+.rating-summary .rs-info a{color:var(--gold);font-weight:600}
+.stars{color:var(--gold);letter-spacing:2px}
+.stars .off{color:var(--line-2)}
+.reviews-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:20px;margin-top:36px}
+.review-card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:24px;display:flex;flex-direction:column}
+.review-card .rc-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.review-card .rc-name{font-family:var(--serif);font-size:1.2rem;color:var(--cream)}
+.review-card .rc-stars{font-size:.95rem;letter-spacing:2px;margin-bottom:12px}
+.review-card p{color:var(--muted);font-size:.94rem;margin:0;flex:1;line-height:1.6}
+.review-card .rc-foot{display:flex;align-items:center;gap:8px;margin-top:16px;font-size:.76rem;color:var(--muted)}
+.review-card .rc-g{display:inline-flex;align-items:center;gap:5px;color:var(--muted)}
+.review-card .rc-g b{color:#e8e2d6;font-weight:600}
+.reviews-cta{text-align:center;margin-top:34px}
 
 /* faixa dourada / cta */
 .cta-band{background:linear-gradient(135deg,#1c1710,#0d0a07);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}

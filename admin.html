@@ -50,7 +50,7 @@
   var TR=window.TR, db=TR.db;
   var el=function(id){return document.getElementById(id);};
   var esc=function(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});};
-  var badge={pendente:"b-pendente",confirmado:"b-confirmado",concluido:"b-concluido",cancelado:"b-cancelado",novo:"b-novo",respondido:"b-confirmado",fechado:"b-concluido"};
+  var badge={pendente:"b-pendente",confirmado:"b-confirmado",concluido:"b-concluido",cancelado:"b-cancelado",faltou:"b-faltou",novo:"b-novo",respondido:"b-confirmado",fechado:"b-concluido"};
   var brDate=function(d){return d?d.split("-").reverse().join("/"):"";};
 
   el("logout").addEventListener("click", async function(e){ e.preventDefault(); if(db) await db.auth.signOut(); location.href="index.html"; });
@@ -107,40 +107,124 @@
   }
 
   // ---------- AGENDA ----------
+  var agView="hoje", agPro="", agHideCancel=false, agNew=false;
+  function waMsg(a, salon){
+    var d=brDate(a.appt_date), h=(a.appt_time||"").slice(0,5), s=a.services?a.services.name:"seu horário";
+    return "Olá "+(a.customer_name||"")+"! Passando pra confirmar seu horário no "+(salon||"salão")+": "+s+
+           " — "+d+" às "+h+". Qualquer coisa, é só me chamar por aqui. 😊";
+  }
   async function renderAgenda(){
     var pane=el("pane-agenda");
-    var today=new Date(); var off=today.getTimezoneOffset()*60000; var todayStr=new Date(today-off).toISOString().slice(0,10);
+    var today=new Date(); var off=today.getTimezoneOffset()*60000;
+    var todayStr=new Date(today-off).toISOString().slice(0,10);
+    var weekEnd=new Date(today.getTime()+6*86400000-off).toISOString().slice(0,10);
+    var cfg=(await db.from("settings").select("*")).data||[]; var cm={}; cfg.forEach(function(r){cm[r.key]=r.value;});
+    var salon=cm.salon_name||"TR Atelier";
+    var pros=(await db.from("professionals").select("*").eq("active",true).order("sort_order")).data||[];
+    var servs=(await db.from("services").select("*").eq("active",true).order("sort_order")).data||[];
     var { data, error } = await db.from("appointments").select("*, services(name), professionals(name)").order("appt_date").order("appt_time");
     if(error){ pane.innerHTML='<div class="panel"><p class="muted">Erro ao carregar agenda.</p></div>'; return; }
+
     var todayCount=data.filter(function(a){return a.appt_date===todayStr && a.status!=="cancelado";}).length;
     var pend=data.filter(function(a){return a.status==="pendente";}).length;
     var upc=data.filter(function(a){return a.appt_date>=todayStr && (a.status==="pendente"||a.status==="confirmado");}).length;
-    var rows=data.map(function(a){
+
+    var view=data.filter(function(a){
+      if(agView==="hoje" && a.appt_date!==todayStr) return false;
+      if(agView==="semana" && (a.appt_date<todayStr || a.appt_date>weekEnd)) return false;
+      if(agPro && a.professional_id!==agPro) return false;
+      if(agHideCancel && a.status==="cancelado") return false;
+      return true;
+    });
+
+    var rows=view.map(function(a){
       var wa=(a.customer_phone||"").replace(/\D/g,"");
       var acts="";
       if(a.status==="pendente") acts+='<button class="btn btn-sm btn-gold" data-act="confirmado" data-id="'+a.id+'">Confirmar</button>';
       if(a.status==="pendente"||a.status==="confirmado"){
+        acts+='<a class="btn btn-sm" href="https://wa.me/55'+wa+'?text='+encodeURIComponent(waMsg(a,salon))+'" target="_blank" title="Enviar confirmação/lembrete no WhatsApp">💬 Lembrar</a>';
         acts+='<button class="btn btn-sm" data-act="concluido" data-id="'+a.id+'">Concluir</button>';
+        acts+='<button class="btn btn-sm" data-act="faltou" data-id="'+a.id+'">Faltou</button>';
         acts+='<button class="btn btn-sm" data-act="cancelado" data-id="'+a.id+'">Cancelar</button>';
       }
-      return '<tr><td><b>'+brDate(a.appt_date)+'</b><br><span class="muted">'+a.appt_time.slice(0,5)+'</span></td>'+
+      var srch=((a.customer_name||"")+" "+(a.customer_phone||"")).toLowerCase();
+      return '<tr data-search="'+esc(srch)+'"><td><b>'+brDate(a.appt_date)+'</b><br><span class="muted">'+a.appt_time.slice(0,5)+'</span></td>'+
         '<td>'+esc(a.customer_name)+(a.notes?'<br><span class="muted" style="font-size:.8rem">“'+esc(a.notes)+'”</span>':'')+'</td>'+
         '<td>'+esc(a.services?a.services.name:"")+(a.professionals?'<br><span class="muted" style="font-size:.8rem">👤 '+esc(a.professionals.name)+'</span>':"")+'</td>'+
         '<td><a href="https://wa.me/55'+wa+'" target="_blank" style="color:var(--gold)">'+esc(a.customer_phone)+'</a></td>'+
         '<td><span class="badge '+(badge[a.status]||"")+'">'+a.status+'</span></td>'+
         '<td><div class="row-actions">'+acts+'</div></td></tr>';
     }).join("");
+
+    // controles
+    function vbtn(k,txt){ return '<button class="btn btn-sm '+(agView===k?"btn-gold":"")+'" data-view="'+k+'">'+txt+'</button>'; }
+    var proOpts='<option value="">Todos os profissionais</option>'+pros.map(function(p){return '<option value="'+p.id+'"'+(agPro===p.id?" selected":"")+'>'+esc(p.name)+'</option>';}).join("");
+    var controls='<div class="ag-controls">'+
+      '<div class="ag-views">'+vbtn("hoje","Hoje")+vbtn("semana","Semana")+vbtn("todos","Todos")+'</div>'+
+      '<select id="ag_pro" class="ag-sel">'+proOpts+'</select>'+
+      '<input id="ag_search" class="ag-search" type="search" placeholder="Buscar por nome ou telefone…">'+
+      '<label class="ag-chk"><input type="checkbox" id="ag_hide" '+(agHideCancel?"checked":"")+'> Ocultar cancelados</label>'+
+      '<button class="btn btn-sm btn-gold" id="ag_newbtn">'+(agNew?"Fechar":"+ Novo agendamento")+'</button></div>';
+
+    // form novo agendamento
+    var newForm="";
+    if(agNew){
+      var sOpts=servs.map(function(s){return '<option value="'+s.id+'">'+esc(s.name)+' — '+TR.money(s.price)+'</option>';}).join("");
+      var pOpts='<option value="">Sem preferência</option>'+pros.map(function(p){return '<option value="'+p.id+'">'+esc(p.name)+'</option>';}).join("");
+      newForm='<div class="panel" style="max-width:none;margin-bottom:18px"><h2 style="font-family:var(--serif);margin-top:0">Novo agendamento (manual)</h2>'+
+        '<div class="grid-2"><div class="field"><label>Cliente</label><input id="na_name"></div>'+
+        '<div class="field"><label>WhatsApp</label><input id="na_phone" type="tel" placeholder="(14) 99999-9999"></div></div>'+
+        '<div class="grid-2"><div class="field"><label>Serviço</label><select id="na_serv">'+sOpts+'</select></div>'+
+        '<div class="field"><label>Profissional</label><select id="na_pro">'+pOpts+'</select></div></div>'+
+        '<div class="grid-2"><div class="field"><label>Data</label><input id="na_date" type="date" value="'+todayStr+'"></div>'+
+        '<div class="field"><label>Horário</label><input id="na_time" type="time" value="09:00"></div></div>'+
+        '<div class="field"><label>Observações (opcional)</label><input id="na_notes"></div>'+
+        '<button class="btn btn-gold" id="na_save">Lançar agendamento</button> <span class="muted" id="na_msg" style="margin-left:10px"></span></div>';
+    }
+
     pane.innerHTML='<h1 style="font-family:var(--serif);font-size:1.9rem;margin:0 0 4px">Agenda</h1>'+
-      '<p class="muted" style="margin:0 0 22px">Gerencie os agendamentos em tempo real.</p>'+
+      '<p class="muted" style="margin:0 0 20px">Gerencie os agendamentos em tempo real.</p>'+
       '<div class="stat-row"><div class="stat"><b>'+todayCount+'</b><span>Hoje</span></div>'+
       '<div class="stat"><b>'+pend+'</b><span>Aguardando confirmação</span></div>'+
       '<div class="stat"><b>'+upc+'</b><span>Próximos ativos</span></div>'+
       '<div class="stat"><b>'+data.length+'</b><span>Total</span></div></div>'+
-      '<div class="panel" style="max-width:none">'+(data.length?'<table><thead><tr><th>Data/Hora</th><th>Cliente</th><th>Serviço</th><th>Contato</th><th>Status</th><th>Ações</th></tr></thead><tbody>'+rows+'</tbody></table>':'<p class="muted center">Nenhum agendamento ainda.</p>')+'</div>';
+      controls+newForm+
+      '<div class="panel" style="max-width:none"><div class="table-wrap">'+
+      (view.length?'<table><thead><tr><th>Data/Hora</th><th>Cliente</th><th>Serviço</th><th>Contato</th><th>Status</th><th>Ações</th></tr></thead><tbody id="ag_body">'+rows+'</tbody></table>':'<p class="muted center">Nenhum agendamento para este filtro.</p>')+
+      '</div></div>';
+
+    // handlers de status
     pane.querySelectorAll("[data-act]").forEach(function(b){
       b.addEventListener("click", async function(){ b.disabled=true;
-        await db.from("appointments").update({status:b.dataset.act}).eq("id",b.dataset.id); renderAgenda(); renderOrcamentos();
+        await db.from("appointments").update({status:b.dataset.act}).eq("id",b.dataset.id); renderAgenda(); renderRelatorios(); renderOrcamentos();
       });
+    });
+    // filtros
+    pane.querySelectorAll("[data-view]").forEach(function(b){ b.addEventListener("click",function(){ agView=b.dataset.view; renderAgenda(); }); });
+    el("ag_pro").addEventListener("change",function(){ agPro=el("ag_pro").value; renderAgenda(); });
+    el("ag_hide").addEventListener("change",function(){ agHideCancel=el("ag_hide").checked; renderAgenda(); });
+    el("ag_newbtn").addEventListener("click",function(){ agNew=!agNew; renderAgenda(); });
+    // busca ao vivo (sem recarregar)
+    var si=el("ag_search");
+    if(si) si.addEventListener("input",function(){
+      var q=si.value.toLowerCase().trim(); var qd=q.replace(/\D/g,"");
+      pane.querySelectorAll("#ag_body tr").forEach(function(tr){
+        var s=tr.getAttribute("data-search")||"";
+        var hit = !q || s.indexOf(q)>=0 || (qd && s.replace(/\D/g,"").indexOf(qd)>=0);
+        tr.style.display = hit ? "" : "none";
+      });
+    });
+    // salvar novo agendamento
+    if(agNew && el("na_save")) el("na_save").addEventListener("click", async function(){
+      var msg=el("na_msg");
+      var r=await db.rpc("admin_create_appointment",{
+        p_service_id:el("na_serv").value, p_professional_id:(el("na_pro").value||null),
+        p_name:(el("na_name").value||"").trim(), p_phone:(el("na_phone").value||"").trim(),
+        p_date:el("na_date").value, p_time:el("na_time").value, p_status:"confirmado",
+        p_notes:(el("na_notes").value||"").trim()
+      });
+      if(r.error || !r.data || !r.data.ok){ msg.textContent=(r.data&&r.data.error)||"Não foi possível lançar."; return; }
+      agNew=false; renderAgenda(); renderRelatorios();
     });
   }
 
@@ -165,7 +249,8 @@
       '<div class="grid-2"><div class="field"><label>Preço (R$)</label><input id="s_price" value="'+(ed?ed.price:"")+'" placeholder="100.00"></div>'+
       '<div class="field"><label>Duração (min)</label><input id="s_dur" type="number" value="'+(ed?ed.duration_min:30)+'"></div></div>'+
       '<div class="grid-2"><div class="field"><label>Ordem</label><input id="s_ord" type="number" value="'+(ed?ed.sort_order:0)+'"></div>'+
-      '<div class="field"><label>&nbsp;</label><label style="color:var(--cream)"><input type="checkbox" id="s_act" '+(!ed||ed.active?"checked":"")+'> Ativo (aparece no site)</label></div></div>'+
+      '<div class="field"><label>&nbsp;</label><label style="color:var(--cream)"><input type="checkbox" id="s_act" '+(!ed||ed.active?"checked":"")+'> Ativo (aparece no site)</label>'+
+      '<span class="muted" style="display:block;font-size:.8rem;margin-top:6px">Marcado: o serviço aparece no site e na tela de agendamento. Desmarcado: fica escondido dos clientes, mas continua no seu histórico e relatórios.</span></div></div>'+
       '<button class="btn btn-gold" id="s_save">'+(ed?"Salvar":"Adicionar")+'</button> '+(ed?'<button class="btn btn-ghost" id="s_cancel">Cancelar</button>':'')+'</div>'+
       '<div class="panel" style="max-width:none"><table><thead><tr><th>Ordem</th><th>Serviço</th><th>Preço</th><th>Duração</th><th>Status</th><th>Ações</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
 
@@ -179,7 +264,15 @@
     });
     if(el("s_cancel")) el("s_cancel").addEventListener("click",function(){ editId=null; renderServicos(); });
     pane.querySelectorAll("[data-edit]").forEach(function(b){ b.addEventListener("click",function(){ editId=b.dataset.edit; renderServicos(); window.scrollTo({top:0,behavior:"smooth"}); }); });
-    pane.querySelectorAll("[data-del]").forEach(function(b){ b.addEventListener("click", async function(){ if(!confirm("Excluir este serviço?"))return; await db.from("services").delete().eq("id",b.dataset.del); renderServicos(); }); });
+    pane.querySelectorAll("[data-del]").forEach(function(b){ b.addEventListener("click", async function(){
+      if(!confirm("Excluir este serviço?"))return;
+      var r=await db.from("services").delete().eq("id",b.dataset.del);
+      if(r.error){
+        if(confirm("Este serviço não pode ser excluído porque já tem agendamentos no histórico.\n\nQuer DESATIVAR? Ele some do site (e da tela de agendamento), mas o histórico é mantido."))
+          await db.from("services").update({active:false}).eq("id",b.dataset.del);
+      }
+      renderServicos();
+    }); });
   }
 
   // ---------- ORÇAMENTOS ----------
@@ -328,54 +421,95 @@
 
   // ---------- RELATORIOS ----------
   function ymd(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+  var relMode="mes", relStart="", relEnd="";
   async function renderRelatorios(){
     var pane=el("pane-relatorios");
-    var now=new Date();
-    var start=now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0")+"-01";
-    var nx=new Date(now.getFullYear(), now.getMonth()+1, 1);
-    var next=nx.getFullYear()+"-"+String(nx.getMonth()+1).padStart(2,"0")+"-01";
-    var mesNome=now.toLocaleDateString("pt-BR",{month:"long",year:"numeric"});
+    var now=new Date(); var off=now.getTimezoneOffset()*60000;
+    function iso(d){return new Date(d-off).toISOString().slice(0,10);}
+    var startD, endExclD, label;
+    if(relMode==="mespassado"){ startD=new Date(now.getFullYear(),now.getMonth()-1,1); endExclD=new Date(now.getFullYear(),now.getMonth(),1); label=startD.toLocaleDateString("pt-BR",{month:"long",year:"numeric"}); }
+    else if(relMode==="30dias"){ endExclD=new Date(now.getFullYear(),now.getMonth(),now.getDate()+1); startD=new Date(now.getFullYear(),now.getMonth(),now.getDate()-29); label="Últimos 30 dias"; }
+    else if(relMode==="custom"){
+      var s=relStart||iso(new Date(now.getFullYear(),now.getMonth(),1)); var e=relEnd||iso(now);
+      startD=new Date(s+"T00:00:00"); endExclD=new Date(new Date(e+"T00:00:00").getTime()+86400000);
+      label="Período personalizado";
+    } else { relMode="mes"; startD=new Date(now.getFullYear(),now.getMonth(),1); endExclD=new Date(now.getFullYear(),now.getMonth()+1,1); label=now.toLocaleDateString("pt-BR",{month:"long",year:"numeric"}); }
+    var start=iso(startD), next=iso(endExclD);
 
     var { data } = await db.from("appointments")
-      .select("appt_date,status, services(name,price), professionals(name)")
-      .gte("appt_date",start).lt("appt_date",next);
+      .select("appt_date,appt_time,customer_name,customer_phone,status, services(name,price), professionals(name)")
+      .gte("appt_date",start).lt("appt_date",next).order("appt_date").order("appt_time");
     data=data||[];
 
-    var ativos=data.filter(function(a){return a.status!=="cancelado";});
+    var ativos=data.filter(function(a){return a.status!=="cancelado" && a.status!=="faltou";});
     var concl=data.filter(function(a){return a.status==="concluido";});
     var canc=data.filter(function(a){return a.status==="cancelado";});
+    var faltou=data.filter(function(a){return a.status==="faltou";});
     var fatReal=concl.reduce(function(s,a){return s+(a.services?Number(a.services.price):0);},0);
     var fatPrev=ativos.reduce(function(s,a){return s+(a.services?Number(a.services.price):0);},0);
 
-    var porServ={}, porProf={};
+    var porServ={}, porProf={}, porHora={}, porDia={}; var diasN=["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
     ativos.forEach(function(a){
       var sn=a.services?a.services.name:"—"; porServ[sn]=(porServ[sn]||0)+1;
       var pn=a.professionals?a.professionals.name:"—";
       if(!porProf[pn]) porProf[pn]={n:0,fat:0};
       porProf[pn].n++; if(a.status==="concluido") porProf[pn].fat+=(a.services?Number(a.services.price):0);
+      var h=(a.appt_time||"").slice(0,2); if(h) porHora[h]=(porHora[h]||0)+1;
+      var dw=new Date(a.appt_date+"T00:00:00").getDay(); porDia[dw]=(porDia[dw]||0)+1;
     });
-    var servRows=Object.keys(porServ).sort(function(a,b){return porServ[b]-porServ[a];})
-      .map(function(k){return '<tr><td>'+esc(k)+'</td><td>'+porServ[k]+'</td></tr>';}).join("") || '<tr><td colspan="2" class="muted center">Sem dados no mês.</td></tr>';
-    var profRows=Object.keys(porProf).sort(function(a,b){return porProf[b].n-porProf[a].n;})
-      .map(function(k){return '<tr><td>'+esc(k)+'</td><td>'+porProf[k].n+'</td><td>'+TR.money(porProf[k].fat)+'</td></tr>';}).join("") || '<tr><td colspan="3" class="muted center">Sem dados no mês.</td></tr>';
-    var taxa = data.length ? Math.round(concl.length/data.length*100) : 0;
+    function rankRows(obj,fmt,cols){ var ks=Object.keys(obj).sort(function(a,b){return (obj[b].n||obj[b])-(obj[a].n||obj[a]);});
+      return ks.length?ks.map(fmt).join(""):'<tr><td colspan="'+cols+'" class="muted center">Sem dados no período.</td></tr>'; }
+    var servRows=rankRows(porServ,function(k){return '<tr><td>'+esc(k)+'</td><td>'+porServ[k]+'</td></tr>';},2);
+    var profRows=rankRows(porProf,function(k){return '<tr><td>'+esc(k)+'</td><td>'+porProf[k].n+'</td><td>'+TR.money(porProf[k].fat)+'</td></tr>';},3);
+    var horaRows=Object.keys(porHora).sort(function(a,b){return porHora[b]-porHora[a];}).slice(0,6)
+      .map(function(k){return '<tr><td>'+k+'h</td><td>'+porHora[k]+'</td></tr>';}).join("") || '<tr><td colspan="2" class="muted center">Sem dados.</td></tr>';
+    var diaRows=Object.keys(porDia).sort(function(a,b){return porDia[b]-porDia[a];})
+      .map(function(k){return '<tr><td>'+diasN[k]+'</td><td>'+porDia[k]+'</td></tr>';}).join("") || '<tr><td colspan="2" class="muted center">Sem dados.</td></tr>';
+    var taxa = ativos.length ? Math.round(concl.length/ativos.length*100) : 0;
+
+    function opt(v,t){ return '<option value="'+v+'"'+(relMode===v?" selected":"")+'>'+t+'</option>'; }
+    var controls='<div class="ag-controls"><select id="rel_mode" class="ag-sel">'+
+      opt("mes","Este mês")+opt("mespassado","Mês passado")+opt("30dias","Últimos 30 dias")+opt("custom","Personalizado")+'</select>'+
+      (relMode==="custom"?'<input id="rel_s" type="date" class="ag-sel" value="'+(relStart||start)+'"><input id="rel_e" type="date" class="ag-sel" value="'+(relEnd||iso(now))+'">':'')+
+      '<button class="btn btn-sm" id="rel_csv">⬇ Exportar CSV</button></div>';
 
     pane.innerHTML='<h1 style="font-family:var(--serif);font-size:1.9rem;margin:0 0 6px">Relatórios</h1>'+
-      '<p class="muted" style="margin:0 0 22px;text-transform:capitalize">'+esc(mesNome)+'</p>'+
+      '<p class="muted" style="margin:0 0 18px;text-transform:capitalize">'+esc(label)+'</p>'+
+      controls+
       '<div class="stat-row">'+
         '<div class="stat"><b>'+TR.money(fatReal)+'</b><span>Faturamento realizado (concluídos)</span></div>'+
-        '<div class="stat"><b>'+TR.money(fatPrev)+'</b><span>Previsto (agendados no mês)</span></div>'+
-        '<div class="stat"><b>'+ativos.length+'</b><span>Atendimentos no mês</span></div>'+
+        '<div class="stat"><b>'+TR.money(fatPrev)+'</b><span>Previsto (agendados ativos)</span></div>'+
+        '<div class="stat"><b>'+ativos.length+'</b><span>Atendimentos</span></div>'+
         '<div class="stat"><b>'+concl.length+'</b><span>Concluídos</span></div>'+
         '<div class="stat"><b>'+canc.length+'</b><span>Cancelados</span></div>'+
+        '<div class="stat"><b>'+faltou.length+'</b><span>Faltas (no-show)</span></div>'+
         '<div class="stat"><b>'+taxa+'%</b><span>Taxa de conclusão</span></div>'+
       '</div>'+
       '<div class="grid g2">'+
         '<div class="panel" style="max-width:none"><h2 style="font-family:var(--serif);margin-top:0">Serviços mais agendados</h2>'+
-          '<table><thead><tr><th>Serviço</th><th>Qtd</th></tr></thead><tbody>'+servRows+'</tbody></table></div>'+
+          '<div class="table-wrap"><table><thead><tr><th>Serviço</th><th>Qtd</th></tr></thead><tbody>'+servRows+'</tbody></table></div></div>'+
         '<div class="panel" style="max-width:none"><h2 style="font-family:var(--serif);margin-top:0">Por profissional</h2>'+
-          '<table><thead><tr><th>Profissional</th><th>Atend.</th><th>Faturado</th></tr></thead><tbody>'+profRows+'</tbody></table></div>'+
+          '<div class="table-wrap"><table><thead><tr><th>Profissional</th><th>Atend.</th><th>Faturado</th></tr></thead><tbody>'+profRows+'</tbody></table></div></div>'+
+        '<div class="panel" style="max-width:none"><h2 style="font-family:var(--serif);margin-top:0">Horários mais movimentados</h2>'+
+          '<div class="table-wrap"><table><thead><tr><th>Horário</th><th>Qtd</th></tr></thead><tbody>'+horaRows+'</tbody></table></div></div>'+
+        '<div class="panel" style="max-width:none"><h2 style="font-family:var(--serif);margin-top:0">Dias mais movimentados</h2>'+
+          '<div class="table-wrap"><table><thead><tr><th>Dia</th><th>Qtd</th></tr></thead><tbody>'+diaRows+'</tbody></table></div></div>'+
       '</div>';
+
+    el("rel_mode").addEventListener("change",function(){ relMode=el("rel_mode").value; renderRelatorios(); });
+    if(el("rel_s")) el("rel_s").addEventListener("change",function(){ relStart=el("rel_s").value; renderRelatorios(); });
+    if(el("rel_e")) el("rel_e").addEventListener("change",function(){ relEnd=el("rel_e").value; renderRelatorios(); });
+    el("rel_csv").addEventListener("click",function(){
+      var head=["Data","Hora","Cliente","Telefone","Servico","Profissional","Status","Preco"];
+      var lines=[head.join(";")];
+      data.forEach(function(a){ lines.push([a.appt_date,(a.appt_time||"").slice(0,5),
+        String(a.customer_name||"").replace(/;/g,","), a.customer_phone||"",
+        a.services?String(a.services.name).replace(/;/g,","):"", a.professionals?String(a.professionals.name).replace(/;/g,","):"",
+        a.status, a.services?a.services.price:""].join(";")); });
+      var blob=new Blob(["﻿"+lines.join("\n")],{type:"text/csv;charset=utf-8"});
+      var url=URL.createObjectURL(blob); var a2=document.createElement("a");
+      a2.href=url; a2.download="relatorio-"+start+"_a_"+next+".csv"; document.body.appendChild(a2); a2.click(); a2.remove(); URL.revokeObjectURL(url);
+    });
   }
 
   // ---------- BLOQUEIOS (folgas / feriados) ----------

@@ -246,10 +246,23 @@ th{color:var(--muted);font-size:.74rem;text-transform:uppercase;letter-spacing:.
 .b-concluido{background:rgba(169,156,134,.16);color:var(--muted)}
 .b-cancelado{background:rgba(224,131,107,.16);color:var(--danger)}
 .b-novo{background:rgba(224,177,113,.16);color:var(--warn)}
+.b-faltou{background:rgba(224,131,107,.22);color:#f0b8ab;border:1px solid rgba(224,131,107,.5)}
 .btn-sm{padding:7px 13px;font-size:.8rem}
 .row-actions{display:flex;gap:6px;flex-wrap:wrap}
 .tabpane{display:none}
 .tabpane.on{display:block}
+/* rolagem horizontal das tabelas no celular */
+.table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.table-wrap table{min-width:520px}
+/* controles (agenda / relatorios) */
+.ag-controls{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:18px}
+.ag-views{display:flex;gap:6px}
+.ag-sel,.ag-search{background:var(--ink-soft);border:1px solid var(--line-2);border-radius:10px;color:var(--cream);
+  padding:9px 12px;font-size:.86rem;font-family:var(--sans)}
+.ag-search{flex:1;min-width:180px}
+.ag-sel:focus,.ag-search:focus{outline:none;border-color:var(--gold)}
+.ag-chk{display:inline-flex;align-items:center;gap:7px;color:var(--muted);font-size:.85rem;cursor:pointer}
+.ag-controls input[type="date"]{color-scheme:light;background:var(--cream);color:#1a1512}
 
 /* responsivo */
 @media (max-width:900px){
@@ -265,3 +278,11 @@ th{color:var(--muted);font-size:.74rem;text-transform:uppercase;letter-spacing:.
   .section{padding:66px 0}
 }
 @media (max-width:560px){.grid-2{grid-template-columns:1fr}.panel{padding:24px}.steps .step{font-size:.64rem}}
+/* painel no celular: tabelas rolam em vez de espremer */
+@media (max-width:760px){
+  .tabpane .panel{overflow-x:auto}
+  .tabpane .panel > table{min-width:560px}
+  .ag-search{min-width:140px}
+  .stat b{font-size:1.6rem}
+  .admin-top nav{gap:12px}
+}

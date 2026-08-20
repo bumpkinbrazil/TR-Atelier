@@ -56,8 +56,9 @@ h1,h2,h3,.serif{font-family:var(--serif);font-weight:600;line-height:1.08;letter
 .nav{display:flex;align-items:center;justify-content:space-between;height:78px}
 .brand{display:flex;align-items:center;gap:12px}
 .brand img{height:46px;width:auto}
-.brand .txt b{font-family:var(--serif);font-size:1.2rem;letter-spacing:.12em;display:block;color:var(--cream)}
-.brand .txt span{font-size:.6rem;letter-spacing:.24em;text-transform:uppercase;color:var(--gold-deep)}
+.brand .txt{text-align:center}
+.brand .txt b{font-family:var(--serif);font-size:1.2rem;letter-spacing:.12em;display:block;color:var(--cream);line-height:1.05}
+.brand .txt span{font-size:.6rem;letter-spacing:.24em;text-transform:uppercase;color:var(--gold-deep);display:block;line-height:1}
 .nav-links{display:flex;align-items:center;gap:28px}
 .nav-links a{font-size:.92rem;color:var(--muted);transition:.2s}
 .nav-links a:hover,.nav-links a.active{color:var(--gold)}

@@ -67,10 +67,11 @@
           <div class="field">
             <label>Horários disponíveis</label>
             <div class="slots" id="slots">
-              <p class="slots-empty" style="display:flex;flex-direction:column;align-items:center;gap:6px;padding:18px 8px">
-                <span style="font-size:1.6rem;line-height:1">🗓️</span>
-                <span>Escolha uma data acima para ver os horários livres.</span>
-              </p>
+              <div style="text-align:center;padding:34px 18px">
+                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="display:block;margin:0 auto 14px;opacity:.85"><rect x="3" y="5.5" width="18" height="15" rx="3"></rect><path d="M3 10h18"></path><path d="M8 3v4M16 3v4"></path><circle cx="8.3" cy="14.3" r="1" fill="var(--gold)" stroke="none"></circle><circle cx="12" cy="14.3" r="1" fill="var(--gold)" stroke="none"></circle><circle cx="15.7" cy="14.3" r="1" fill="var(--gold)" stroke="none"></circle><circle cx="8.3" cy="17.3" r="1" fill="var(--gold)" stroke="none"></circle></svg>
+                <p style="margin:0;color:var(--cream);font-size:.95rem;font-weight:600">Escolha uma data</p>
+                <p class="muted" style="margin:6px 0 0;font-size:.83rem">para ver os horários disponíveis</p>
+              </div>
             </div>
             <input type="hidden" id="timeInput">
           </div>
@@ -197,14 +198,40 @@
     }
   }
 
+  // Estado visual "vazio" do bloco de horários (mesmo padrão pros 4 casos: inicial, buscando, erro, sem horário)
+  function emptySlotsHTML(opts){
+    var icon = opts.icon || 'calendar';
+    var svgs = {
+      calendar:
+        '<rect x="3" y="5.5" width="18" height="15" rx="3"></rect><path d="M3 10h18"></path><path d="M8 3v4M16 3v4"></path>'+
+        '<circle cx="8.3" cy="14.3" r="1" fill="var(--gold)" stroke="none"></circle>'+
+        '<circle cx="12" cy="14.3" r="1" fill="var(--gold)" stroke="none"></circle>'+
+        '<circle cx="15.7" cy="14.3" r="1" fill="var(--gold)" stroke="none"></circle>'+
+        '<circle cx="8.3" cy="17.3" r="1" fill="var(--gold)" stroke="none"></circle>',
+      search:
+        '<rect x="3" y="5.5" width="18" height="15" rx="3"></rect><path d="M3 10h18"></path><path d="M8 3v4M16 3v4"></path>'+
+        '<circle cx="11" cy="15" r="2.6"></circle><path d="M15 19l-2.2-2.2"></path>',
+      empty:
+        '<rect x="3" y="5.5" width="18" height="15" rx="3"></rect><path d="M3 10h18"></path><path d="M8 3v4M16 3v4"></path>'+
+        '<path d="M9 15.5l3-3 3 3M9 15.5h6"></path>',
+      warn:
+        '<circle cx="12" cy="12" r="9"></circle><path d="M12 8v5"></path><circle cx="12" cy="16" r=".6" fill="var(--gold)" stroke="none"></circle>'
+    };
+    return '<div style="text-align:center;padding:34px 18px">'+
+      '<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="display:block;margin:0 auto 14px;opacity:.85">'+(svgs[icon]||svgs.calendar)+'</svg>'+
+      '<p style="margin:0;color:var(--cream);font-size:.95rem;font-weight:600">'+opts.title+'</p>'+
+      (opts.sub?'<p class="muted" style="margin:6px 0 0;font-size:.83rem">'+opts.sub+'</p>':'')+
+      '</div>';
+  }
+
   async function loadSlots(){
     if(!serviceSelect.value || !dateInput.value || !db) return;
     var d=new Date(dateInput.value+"T00:00:00");
     dayNote.textContent = dias[d.getDay()]+", "+dateInput.value.split("-").reverse().join("/");
-    slotsBox.innerHTML='<p class="slots-empty">Buscando horários…</p>'; timeInput.value="";
+    slotsBox.innerHTML=emptySlotsHTML({icon:"search",title:"Buscando horários…",sub:"Só um instante."}); timeInput.value="";
     var r = await db.rpc("get_available_slots",{ p_service_id:serviceSelect.value, p_date:dateInput.value, p_professional_id:(proSelect.value||null) });
-    if(r.error){ slotsBox.innerHTML='<p class="slots-empty">Erro ao buscar horários.</p>'; return; }
-    if(!r.data || !r.data.length){ slotsBox.innerHTML='<p class="slots-empty">Nenhum horário livre neste dia. Tente outra data. 🗓️</p>'; return; }
+    if(r.error){ slotsBox.innerHTML=emptySlotsHTML({icon:"warn",title:"Erro ao buscar horários",sub:"Tente novamente em instantes."}); return; }
+    if(!r.data || !r.data.length){ slotsBox.innerHTML=emptySlotsHTML({icon:"empty",title:"Nenhum horário livre nesse dia",sub:"Tente escolher outra data."}); return; }
     slotsBox.innerHTML="";
     r.data.forEach(function(t){
       var s=document.createElement("div"); s.className="slot"; s.textContent=t;
@@ -276,7 +303,7 @@
   proSelect.addEventListener("change",function(){
     loadServicesForProfessional(proSelect.value);
     timeInput.value="";
-    slotsBox.innerHTML='<p class="slots-empty" style="display:flex;flex-direction:column;align-items:center;gap:6px;padding:18px 8px"><span style="font-size:1.6rem;line-height:1">🗓️</span><span>Escolha uma data acima para ver os horários livres.</span></p>';
+    slotsBox.innerHTML=emptySlotsHTML({icon:"calendar",title:"Escolha uma data",sub:"para ver os horários disponíveis"});
   });
   dateInput.addEventListener("change",loadSlots);
 
@@ -333,7 +360,7 @@
 
   el("newBooking").addEventListener("click",function(){
     form.reset(); timeInput.value="";
-    slotsBox.innerHTML='<p class="slots-empty" style="display:flex;flex-direction:column;align-items:center;gap:6px;padding:18px 8px"><span style="font-size:1.6rem;line-height:1">🗓️</span><span>Escolha uma data acima para ver os horários livres.</span></p>';
+    slotsBox.innerHTML=emptySlotsHTML({icon:"calendar",title:"Escolha uma data",sub:"para ver os horários disponíveis"});
     successBox.classList.add("hidden"); form.classList.remove("hidden"); showStep(1);
   });
 

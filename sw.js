@@ -1,5 +1,5 @@
 /* TR Atelier — service worker (network-first, cache offline) */
-var CACHE = "tr-atelier-v1";
+var CACHE = "tr-atelier-v2";
 
 self.addEventListener("install", function (e) {
   self.skipWaiting();

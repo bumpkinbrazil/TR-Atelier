@@ -41,7 +41,7 @@
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.0"></script>
 <script src="assets/config.js"></script>
 <script src="assets/main.js"></script>
 <script>
@@ -109,7 +109,7 @@
   }
 
   // ---------- AGENDA ----------
-  var agView="hoje", agPro="", agHideCancel=false, agNew=false;
+  var agView="hoje", agPro="", agHideCancel=false, agNew=false, agTrash=false;
   function waMsg(a, salon){
     var d=brDate(a.appt_date), h=(a.appt_time||"").slice(0,5), s=a.services?a.services.name:"seu horário";
     return "Olá "+(a.customer_name||"")+"! Passando pra confirmar seu horário no "+(salon||"salão")+": "+s+
@@ -124,8 +124,12 @@
     var salon=cm.salon_name||"TR Atelier";
     var pros=(await db.from("professionals").select("*").eq("active",true).order("sort_order")).data||[];
     var servs=(await db.from("services").select("*").eq("active",true).order("sort_order")).data||[];
-    var { data, error } = await db.from("appointments").select("*, services(name), professionals(name)").order("appt_date").order("appt_time");
+    var { data, error } = await db.from("appointments").select("*, services(name), professionals(name)").is("deleted_at",null).order("appt_date").order("appt_time");
     if(error){ pane.innerHTML='<div class="panel"><p class="muted">Erro ao carregar agenda.</p></div>'; return; }
+    var trashData=[];
+    if(agTrash){
+      trashData=(await db.from("appointments").select("*, services(name), professionals(name)").not("deleted_at","is",null).order("deleted_at",{ascending:false})).data||[];
+    }
 
     var todayCount=data.filter(function(a){return a.appt_date===todayStr && a.status!=="cancelado";}).length;
     var pend=data.filter(function(a){return a.status==="pendente";}).length;
@@ -138,8 +142,10 @@
       if(agHideCancel && a.status==="cancelado") return false;
       return true;
     });
+    var viewPend = view.filter(function(a){return a.status==="pendente";});
+    var viewFila = view.filter(function(a){return a.status!=="pendente";});
 
-    var rows=view.map(function(a){
+    function rowFor(a){
       var wa=(a.customer_phone||"").replace(/\D/g,"");
       var acts="";
       if(a.status==="pendente") acts+='<button class="btn btn-sm btn-gold" data-act="confirmado" data-id="'+a.id+'">Confirmar</button>';
@@ -149,6 +155,7 @@
         acts+='<button class="btn btn-sm" data-act="faltou" data-id="'+a.id+'">Faltou</button>';
         acts+='<button class="btn btn-sm" data-act="cancelado" data-id="'+a.id+'">Cancelar</button>';
       }
+      acts+='<button class="btn btn-sm btn-danger" data-delap="'+a.id+'" title="Excluir (vai pra lixeira, dá pra restaurar)">🗑 Excluir</button>';
       var srch=((a.customer_name||"")+" "+(a.customer_phone||"")).toLowerCase();
       return '<tr data-search="'+esc(srch)+'"><td><b>'+brDate(a.appt_date)+'</b><br><span class="muted">'+a.appt_time.slice(0,5)+'</span></td>'+
         '<td>'+esc(a.customer_name)+(a.notes?'<br><span class="muted" style="font-size:.8rem">“'+esc(a.notes)+'”</span>':'')+'</td>'+
@@ -156,6 +163,17 @@
         '<td><a href="https://wa.me/55'+wa+'" target="_blank" style="color:var(--gold)">'+esc(a.customer_phone)+'</a></td>'+
         '<td><span class="badge '+(badge[a.status]||"")+'">'+a.status+'</span></td>'+
         '<td><div class="row-actions">'+acts+'</div></td></tr>';
+    }
+    var pendRows=viewPend.map(rowFor).join("");
+    var rows=viewFila.map(rowFor).join("");
+    var trashRows=trashData.map(function(a){
+      var when=a.deleted_at?new Date(a.deleted_at).toLocaleString("pt-BR"):"";
+      return '<tr><td><b>'+brDate(a.appt_date)+'</b><br><span class="muted">'+a.appt_time.slice(0,5)+'</span></td>'+
+        '<td>'+esc(a.customer_name)+'</td>'+
+        '<td>'+esc(a.services?a.services.name:"")+(a.professionals?'<br><span class="muted" style="font-size:.8rem">👤 '+esc(a.professionals.name)+'</span>':"")+'</td>'+
+        '<td><span class="badge '+(badge[a.status]||"")+'">'+a.status+'</span></td>'+
+        '<td class="muted" style="font-size:.8rem">'+esc(when)+'</td>'+
+        '<td><button class="btn btn-sm btn-gold" data-restap="'+a.id+'">↩ Restaurar</button></td></tr>';
     }).join("");
 
     // controles
@@ -166,6 +184,7 @@
       '<select id="ag_pro" class="ag-sel">'+proOpts+'</select>'+
       '<input id="ag_search" class="ag-search" type="search" placeholder="Buscar por nome ou telefone…">'+
       '<label class="ag-chk"><input type="checkbox" id="ag_hide" '+(agHideCancel?"checked":"")+'> Ocultar cancelados</label>'+
+      '<button class="btn btn-sm" id="ag_trashbtn">'+(agTrash?"Fechar lixeira":"🗑 Lixeira")+'</button>'+
       '<button class="btn btn-sm btn-gold" id="ag_newbtn">'+(agNew?"Fechar":"+ Novo agendamento")+'</button></div>';
 
     // form novo agendamento
@@ -188,15 +207,27 @@
         '<button class="btn btn-gold" id="na_save">Lançar agendamento</button> <span class="muted" id="na_msg" style="margin-left:10px"></span></div>';
     }
 
+    var pendPanel = viewPend.length
+      ? '<div class="panel" style="max-width:none;margin-bottom:18px;border:1px solid var(--gold)"><h2 style="font-family:var(--serif);margin-top:0;color:var(--gold)">⏳ Aguardando confirmação ('+viewPend.length+')</h2>'+
+        '<p class="muted" style="margin:0 0 14px;font-size:.85rem">Agendamentos que o cliente acabou de marcar. Confirme para o horário entrar na fila normal da agenda.</p>'+
+        '<div class="table-wrap"><table><thead><tr><th>Data/Hora</th><th>Cliente</th><th>Serviço</th><th>Contato</th><th>Status</th><th>Ações</th></tr></thead><tbody id="ag_pend_body">'+pendRows+'</tbody></table></div></div>'
+      : '';
+
+    var trashPanel = agTrash
+      ? '<div class="panel" style="max-width:none;margin-bottom:18px"><h2 style="font-family:var(--serif);margin-top:0">🗑 Lixeira ('+trashData.length+')</h2>'+
+        '<p class="muted" style="margin:0 0 14px;font-size:.85rem">Agendamentos excluídos. Dá pra restaurar a qualquer momento.</p>'+
+        '<div class="table-wrap">'+(trashData.length?'<table><thead><tr><th>Data/Hora</th><th>Cliente</th><th>Serviço</th><th>Status</th><th>Excluído em</th><th></th></tr></thead><tbody id="ag_trash_body">'+trashRows+'</tbody></table>':'<p class="muted center">Lixeira vazia.</p>')+'</div></div>'
+      : '';
+
     pane.innerHTML='<h1 style="font-family:var(--serif);font-size:1.9rem;margin:0 0 4px">Agenda</h1>'+
       '<p class="muted" style="margin:0 0 20px">Gerencie os agendamentos em tempo real.</p>'+
       '<div class="stat-row"><div class="stat"><b>'+todayCount+'</b><span>Hoje</span></div>'+
       '<div class="stat"><b>'+pend+'</b><span>Aguardando confirmação</span></div>'+
       '<div class="stat"><b>'+upc+'</b><span>Próximos ativos</span></div>'+
       '<div class="stat"><b>'+data.length+'</b><span>Total</span></div></div>'+
-      controls+newForm+
+      controls+newForm+trashPanel+pendPanel+
       '<div class="panel" style="max-width:none"><div class="table-wrap">'+
-      (view.length?'<table><thead><tr><th>Data/Hora</th><th>Cliente</th><th>Serviço</th><th>Contato</th><th>Status</th><th>Ações</th></tr></thead><tbody id="ag_body">'+rows+'</tbody></table>':'<p class="muted center">Nenhum agendamento para este filtro.</p>')+
+      (viewFila.length?'<table><thead><tr><th>Data/Hora</th><th>Cliente</th><th>Serviço</th><th>Contato</th><th>Status</th><th>Ações</th></tr></thead><tbody id="ag_body">'+rows+'</tbody></table>':'<p class="muted center">Nenhum agendamento confirmado para este filtro.</p>')+
       '</div></div>';
 
     // handlers de status
@@ -205,16 +236,36 @@
         await db.from("appointments").update({status:b.dataset.act}).eq("id",b.dataset.id); renderAgenda(); renderRelatorios(); renderOrcamentos();
       });
     });
+    // excluir (vai pra lixeira)
+    pane.querySelectorAll("[data-delap]").forEach(function(b){
+      b.addEventListener("click", async function(){
+        if(!confirm("Excluir este agendamento? Ele vai pra lixeira e dá pra restaurar depois.")) return;
+        b.disabled=true;
+        var r=await db.rpc("admin_delete_appointment",{p_id:b.dataset.delap});
+        if(r.error || !r.data || !r.data.ok){ alert((r.data&&r.data.error)||"Não foi possível excluir."); b.disabled=false; return; }
+        renderAgenda(); renderRelatorios();
+      });
+    });
+    // restaurar da lixeira
+    pane.querySelectorAll("[data-restap]").forEach(function(b){
+      b.addEventListener("click", async function(){
+        b.disabled=true;
+        var r=await db.rpc("admin_restore_appointment",{p_id:b.dataset.restap});
+        if(r.error || !r.data || !r.data.ok){ alert((r.data&&r.data.error)||"Não foi possível restaurar."); b.disabled=false; return; }
+        renderAgenda(); renderRelatorios();
+      });
+    });
     // filtros
     pane.querySelectorAll("[data-view]").forEach(function(b){ b.addEventListener("click",function(){ agView=b.dataset.view; renderAgenda(); }); });
     el("ag_pro").addEventListener("change",function(){ agPro=el("ag_pro").value; renderAgenda(); });
     el("ag_hide").addEventListener("change",function(){ agHideCancel=el("ag_hide").checked; renderAgenda(); });
     el("ag_newbtn").addEventListener("click",function(){ agNew=!agNew; renderAgenda(); });
+    el("ag_trashbtn").addEventListener("click",function(){ agTrash=!agTrash; renderAgenda(); });
     // busca ao vivo (sem recarregar)
     var si=el("ag_search");
     if(si) si.addEventListener("input",function(){
       var q=si.value.toLowerCase().trim(); var qd=q.replace(/\D/g,"");
-      pane.querySelectorAll("#ag_body tr").forEach(function(tr){
+      pane.querySelectorAll("#ag_body tr, #ag_pend_body tr").forEach(function(tr){
         var s=tr.getAttribute("data-search")||"";
         var hit = !q || s.indexOf(q)>=0 || (qd && s.replace(/\D/g,"").indexOf(qd)>=0);
         tr.style.display = hit ? "" : "none";
@@ -469,19 +520,31 @@
     var pane=el("pane-profissionais");
     var { data } = await db.from("professionals").select("*").order("sort_order");
     data=data||[];
+    var allServs=(await db.from("services").select("id,name").eq("active",true).order("sort_order")).data||[];
     var ed = editProId ? data.filter(function(p){return p.id===editProId;})[0] : null;
+    var edServIds=[];
+    if(ed){ edServIds=(await db.from("professional_services").select("service_id").eq("professional_id",ed.id)).data.map(function(r){return r.service_id;}); }
     var rows=data.map(function(p){
       return '<tr><td>'+p.sort_order+'</td><td><b>'+esc(p.name)+'</b></td><td>'+esc(p.role||"")+'</td>'+
         '<td>'+(p.active?'<span class="badge b-confirmado">Ativo</span>':'<span class="badge b-cancelado">Inativo</span>')+'</td>'+
         '<td><div class="row-actions"><button class="btn btn-sm" data-edp="'+p.id+'">Editar</button>'+
         '<button class="btn btn-sm" data-delp="'+p.id+'">Excluir</button></div></td></tr>';
     }).join("");
+    var servBoxes = allServs.length
+      ? allServs.map(function(s){
+          var chk = edServIds.indexOf(s.id)>=0 ? "checked" : "";
+          return '<label style="display:inline-flex;align-items:center;gap:6px;margin:0 14px 8px 0;color:var(--cream)"><input type="checkbox" class="p_serv" value="'+s.id+'" '+chk+'> '+esc(s.name)+'</label>';
+        }).join("")
+      : '<span class="muted" style="font-size:.85rem">Cadastre serviços primeiro na aba "Serviços & Preços".</span>';
     pane.innerHTML='<h1 style="font-family:var(--serif);font-size:1.9rem;margin:0 0 6px">Profissionais</h1>'+
       '<p class="muted" style="margin:0 0 22px">Quem atende no salão. Cada profissional tem a própria agenda; o cliente escolhe na hora de agendar.</p>'+
       '<div class="panel" style="max-width:none;margin-bottom:22px"><h2 style="font-family:var(--serif);margin-top:0">'+(ed?"Editar profissional":"Novo profissional")+'</h2>'+
       '<div class="grid g2"><div class="field"><label>Nome</label><input id="p_name" value="'+esc(ed?ed.name:"")+'"></div>'+
       '<div class="field"><label>Função (opcional)</label><input id="p_role" value="'+esc(ed?ed.role:"")+'" placeholder="Cabeleireiro(a), Barbeiro..."></div></div>'+
       '<div class="field"><label>Ordem</label><input id="p_ord" type="number" value="'+(ed?ed.sort_order:0)+'"></div>'+
+      '<div class="field"><label>Quais serviços esse profissional faz?</label>'+
+      '<div>'+servBoxes+'</div>'+
+      '<span class="muted" style="font-size:.8rem;display:block;margin-top:4px">Não marque nenhum se ele faz todos os serviços do salão.</span></div>'+
       '<button class="btn btn-gold" id="p_save">'+(ed?"Salvar":"Adicionar")+'</button> '+(ed?'<button class="btn btn-ghost" id="p_cancel">Cancelar</button>':'')+'</div>'+
       '<div class="panel" style="max-width:none"><table><thead><tr><th>Ordem</th><th>Nome</th><th>Função</th><th>Status</th><th>Ações</th></tr></thead><tbody>'+
       (data.length?rows:'<tr><td colspan="5" class="muted center">Nenhum profissional ainda.</td></tr>')+'</tbody></table></div>';
@@ -490,7 +553,14 @@
       var payload={name:(el("p_name").value||"").trim(), role:(el("p_role").value||"").trim(),
         sort_order:parseInt(el("p_ord").value)||0, active:(ed?ed.active:true)};
       if(payload.name.length<2){ alert("Informe o nome."); return; }
-      if(ed){ await db.from("professionals").update(payload).eq("id",ed.id); } else { await db.from("professionals").insert(payload); }
+      var selectedServ=[]; pane.querySelectorAll(".p_serv:checked").forEach(function(c){ selectedServ.push(c.value); });
+      var proId=ed?ed.id:null;
+      if(ed){ await db.from("professionals").update(payload).eq("id",ed.id); }
+      else { var ins=await db.from("professionals").insert(payload).select().single(); proId=ins.data&&ins.data.id; }
+      if(proId){
+        await db.from("professional_services").delete().eq("professional_id",proId);
+        if(selectedServ.length){ await db.from("professional_services").insert(selectedServ.map(function(sid){return {professional_id:proId, service_id:sid};})); }
+      }
       editProId=null; renderProfissionais();
     });
     if(el("p_cancel")) el("p_cancel").addEventListener("click",function(){ editProId=null; renderProfissionais(); });
@@ -517,6 +587,7 @@
 
     var { data } = await db.from("appointments")
       .select("appt_date,appt_time,customer_name,customer_phone,status, services(name,price), professionals(name)")
+      .is("deleted_at",null)
       .gte("appt_date",start).lt("appt_date",next).order("appt_date").order("appt_time");
     data=data||[];
 

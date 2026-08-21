@@ -30,7 +30,7 @@
     <div class="section-head">
       <p class="eyebrow">Agendar</p>
       <h2>Marque seu horário</h2>
-      <p>Escolha o serviço, o dia e um horário livre. Rápido e sem precisar criar conta.</p>
+      <p>Escolha o profissional, o serviço, o dia e um horário livre. Rápido e sem precisar criar conta.</p>
     </div>
 
     <div class="panel">
@@ -39,20 +39,20 @@
 
       <form id="bookingForm">
         <div class="steps">
-          <div class="step active" data-step="1">1. Serviço</div>
+          <div class="step active" data-step="1">1. Profissional e serviço</div>
           <div class="step" data-step="2">2. Data e hora</div>
           <div class="step" data-step="3">3. Seus dados</div>
         </div>
 
         <!-- Passo 1 -->
         <div class="step-panel" data-panel="1">
-          <div class="field">
-            <label>Qual serviço você quer?</label>
-            <select id="serviceSelect" required><option value="">Carregando serviços…</option></select>
-          </div>
           <div class="field hidden" id="proField">
             <label>Com qual profissional?</label>
-            <select id="proSelect"><option value="">Sem preferência</option></select>
+            <select id="proSelect"><option value="">Carregando…</option></select>
+          </div>
+          <div class="field">
+            <label>Qual serviço você quer?</label>
+            <select id="serviceSelect" required><option value="">Escolha o profissional primeiro…</option></select>
           </div>
           <button type="button" class="btn btn-gold btn-block" data-next="2">Continuar →</button>
         </div>
@@ -66,7 +66,12 @@
           </div>
           <div class="field">
             <label>Horários disponíveis</label>
-            <div class="slots" id="slots"><p class="slots-empty">Selecione uma data para ver os horários.</p></div>
+            <div class="slots" id="slots">
+              <p class="slots-empty" style="display:flex;flex-direction:column;align-items:center;gap:6px;padding:18px 8px">
+                <span style="font-size:1.6rem;line-height:1">🗓️</span>
+                <span>Escolha uma data acima para ver os horários livres.</span>
+              </p>
+            </div>
             <input type="hidden" id="timeInput">
           </div>
           <div class="grid-2">
@@ -100,20 +105,19 @@
         </div>
         <div style="margin-top:14px"><button type="button" class="btn btn-ghost btn-sm" id="newBooking">Fazer outro agendamento</button></div>
         <p class="muted hidden" id="manageWrap" style="font-size:.82rem;margin-top:16px">Precisa cancelar ou remarcar? <a id="manageLink" href="#" style="color:var(--gold)">Gerenciar meu agendamento →</a></p>
-        <p class="muted" style="font-size:.8rem;margin-top:10px">Guarde esta confirmação.</p>
       </div>
     </div>
   </div>
 </section>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.0"></script>
 <script src="assets/config.js"></script>
 <script src="assets/main.js"></script>
 <script>
 (function(){
   "use strict";
   var TR = window.TR, db = TR.db;
-  var services = {}, professionals = {};
+  var services = {}, professionals = {}, allServices = [];
   var el = function(id){return document.getElementById(id);};
   var panels = document.querySelectorAll(".step-panel");
   var stepEls = document.querySelectorAll(".steps .step");
@@ -122,6 +126,7 @@
   var summary = el("summary"), formErr = el("formErr"), successBox = el("successBox");
   var form = el("bookingForm");
   var dias=["domingo","segunda-feira","terça-feira","quarta-feira","quinta-feira","sexta-feira","sábado"];
+  var pendingServiceParam = new URLSearchParams(location.search).get("s");
 
   if(!TR.configured){ el("cfgWarn").classList.add("show"); }
 
@@ -133,20 +138,38 @@
   }
   function showErr(m){ formErr.textContent=m; formErr.classList.add("show"); formErr.scrollIntoView({behavior:"smooth",block:"center"}); }
 
-  async function loadServices(){
-    if(!db){ serviceSelect.innerHTML='<option value="">(conecte o Supabase)</option>'; return; }
-    var r = await db.from("services").select("*").eq("active",true).order("sort_order");
-    if(r.error||!r.data){ serviceSelect.innerHTML='<option value="">Erro ao carregar</option>'; return; }
+  // Preenche o select de serviços a partir de uma lista já filtrada.
+  function fillServiceOptions(list){
+    services = {};
+    if(!list.length){ serviceSelect.innerHTML='<option value="">Nenhum serviço disponível com esse profissional</option>'; return; }
     serviceSelect.innerHTML='<option value="">Selecione um serviço…</option>';
-    r.data.forEach(function(s){
+    list.forEach(function(s){
       services[s.id]=s;
       var price = s.price>0 ? " — "+TR.money(s.price) : "";
       var o=document.createElement("option"); o.value=s.id;
       o.textContent=s.name+price+" ("+s.duration_min+" min)";
       serviceSelect.appendChild(o);
     });
-    var q=new URLSearchParams(location.search).get("s");
-    if(q && services[q]) serviceSelect.value=q;
+    if(pendingServiceParam && services[pendingServiceParam]){
+      serviceSelect.value=pendingServiceParam;
+      pendingServiceParam=null;
+    }
+  }
+
+  // Carrega os serviços do profissional escolhido (ou todos, se "sem preferência"/único profissional).
+  async function loadServicesForProfessional(proId){
+    if(!db){ serviceSelect.innerHTML='<option value="">(conecte o Supabase)</option>'; return; }
+    if(!allServices.length){
+      var r = await db.from("services").select("*").eq("active",true).order("sort_order");
+      if(r.error||!r.data){ serviceSelect.innerHTML='<option value="">Erro ao carregar</option>'; return; }
+      allServices = r.data;
+    }
+    if(!proId){ fillServiceOptions(allServices); return; }
+    var pr = await db.from("professional_services").select("service_id").eq("professional_id", proId);
+    var ids = (pr.data||[]).map(function(row){return row.service_id;});
+    // sem vinculo configurado pra esse profissional = faz todos os servicos (compatibilidade)
+    var filtered = ids.length ? allServices.filter(function(s){return ids.indexOf(s.id)>=0;}) : allServices;
+    fillServiceOptions(filtered);
   }
 
   async function loadProfessionals(){
@@ -154,14 +177,23 @@
     var r = await db.from("professionals").select("*").eq("active",true).order("sort_order");
     if(r.error || !r.data) return;
     r.data.forEach(function(p){ professionals[p.id]=p; });
-    // so' pergunta o profissional se houver 2 ou mais
     if(r.data.length >= 2){
+      proSelect.innerHTML='<option value="">Sem preferência (qualquer um)</option>';
       r.data.forEach(function(p){
         var o=document.createElement("option"); o.value=p.id;
         o.textContent=p.name + (p.role ? " — "+p.role : "");
         proSelect.appendChild(o);
       });
       el("proField").classList.remove("hidden");
+      loadServicesForProfessional("");
+    } else if(r.data.length === 1){
+      proSelect.innerHTML='<option value="'+r.data[0].id+'">'+r.data[0].name+'</option>';
+      proSelect.value = r.data[0].id;
+      el("proField").classList.add("hidden");
+      loadServicesForProfessional(r.data[0].id);
+    } else {
+      el("proField").classList.add("hidden");
+      loadServicesForProfessional("");
     }
   }
 
@@ -188,8 +220,8 @@
     var s=services[serviceSelect.value]; if(!s) return;
     var proTxt = proSelect.value && professionals[proSelect.value] ? professionals[proSelect.value].name : "Sem preferência";
     summary.innerHTML=
-      '<div><span>Serviço</span><b>'+s.name+'</b></div>'+
       (el("proField").classList.contains("hidden")?'':'<div><span>Profissional</span><span>'+proTxt+'</span></div>')+
+      '<div><span>Serviço</span><b>'+s.name+'</b></div>'+
       '<div><span>Data</span><span>'+dateInput.value.split("-").reverse().join("/")+'</span></div>'+
       '<div><span>Horário</span><span>'+timeInput.value+'</span></div>'+
       '<div><span>Duração</span><span>'+s.duration_min+' min</span></div>'+
@@ -241,7 +273,11 @@
   });
   form.querySelectorAll("[data-prev]").forEach(function(b){ b.addEventListener("click",function(){ showStep(Number(b.dataset.prev)); }); });
   serviceSelect.addEventListener("change",function(){ if(dateInput.value) loadSlots(); });
-  proSelect.addEventListener("change",function(){ if(dateInput.value) loadSlots(); });
+  proSelect.addEventListener("change",function(){
+    loadServicesForProfessional(proSelect.value);
+    timeInput.value="";
+    slotsBox.innerHTML='<p class="slots-empty" style="display:flex;flex-direction:column;align-items:center;gap:6px;padding:18px 8px"><span style="font-size:1.6rem;line-height:1">🗓️</span><span>Escolha uma data acima para ver os horários livres.</span></p>';
+  });
   dateInput.addEventListener("change",loadSlots);
 
   var now=new Date(); var off=now.getTimezoneOffset()*60000;
@@ -297,11 +333,10 @@
 
   el("newBooking").addEventListener("click",function(){
     form.reset(); timeInput.value="";
-    slotsBox.innerHTML='<p class="slots-empty">Selecione uma data para ver os horários.</p>';
+    slotsBox.innerHTML='<p class="slots-empty" style="display:flex;flex-direction:column;align-items:center;gap:6px;padding:18px 8px"><span style="font-size:1.6rem;line-height:1">🗓️</span><span>Escolha uma data acima para ver os horários livres.</span></p>';
     successBox.classList.add("hidden"); form.classList.remove("hidden"); showStep(1);
   });
 
-  loadServices();
   loadProfessionals();
 })();
 </script>

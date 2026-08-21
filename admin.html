@@ -109,7 +109,7 @@
   }
 
   // ---------- AGENDA ----------
-  var agView="hoje", agPro="", agHideCancel=false, agNew=false, agTrash=false;
+  var agView="todos", agPro="", agHideCancel=false, agNew=false, agTrash=false;
   function waMsg(a, salon){
     var d=brDate(a.appt_date), h=(a.appt_time||"").slice(0,5), s=a.services?a.services.name:"seu horário";
     return "Olá "+(a.customer_name||"")+"! Passando pra confirmar seu horário no "+(salon||"salão")+": "+s+

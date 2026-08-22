@@ -116,6 +116,12 @@
     if(!a.manage_token) return "";
     return location.origin+"/gerenciar.html?id="+a.id+"&t="+a.manage_token;
   }
+  function confirmMsg(a, salon){
+    var d=brDate(a.appt_date), h=(a.appt_time||"").slice(0,5), s=a.services?a.services.name:"seu horário";
+    var link=manageLink(a);
+    return "Olá "+(a.customer_name||"")+"! Seu horário no "+(salon||"salão")+" foi *confirmado* ✅: "+s+
+           " — "+d+" às "+h+"."+(link?" Se precisar remarcar ou cancelar: "+link:"")+"\n\nAté lá! 😊";
+  }
   function waMsg(a, salon){
     var d=brDate(a.appt_date), h=(a.appt_time||"").slice(0,5), s=a.services?a.services.name:"seu horário";
     var link=manageLink(a);
@@ -164,11 +170,13 @@
       }
       acts+='<button class="btn btn-sm btn-danger" data-delap="'+a.id+'" title="Excluir (vai pra lixeira, dá pra restaurar)">🗑 Excluir</button>';
       var srch=((a.customer_name||"")+" "+(a.customer_phone||"")).toLowerCase();
+      var autoTags=(a.confirm_msg_sent_at?'<span class="muted" style="font-size:.72rem;display:block">✓ confirmação enviada</span>':'')+
+        (a.reminder_msg_sent_at?'<span class="muted" style="font-size:.72rem;display:block">✓ lembrete enviado</span>':'');
       return '<tr data-search="'+esc(srch)+'"><td><b>'+brDate(a.appt_date)+'</b><br><span class="muted">'+a.appt_time.slice(0,5)+'</span></td>'+
         '<td>'+esc(a.customer_name)+(a.notes?'<br><span class="muted" style="font-size:.8rem">“'+esc(a.notes)+'”</span>':'')+'</td>'+
         '<td>'+esc(a.services?a.services.name:"")+(a.professionals?'<br><span class="muted" style="font-size:.8rem">👤 '+esc(a.professionals.name)+'</span>':"")+'</td>'+
         '<td><a href="https://wa.me/55'+wa+'" target="_blank" style="color:var(--gold)">'+esc(a.customer_phone)+'</a></td>'+
-        '<td><span class="badge '+(badge[a.status]||"")+'">'+a.status+'</span></td>'+
+        '<td><span class="badge '+(badge[a.status]||"")+'">'+a.status+'</span>'+autoTags+'</td>'+
         '<td><div class="row-actions">'+acts+'</div></td></tr>';
     }
     var pendRows=viewPend.map(rowFor).join("");
@@ -239,8 +247,20 @@
 
     // handlers de status
     pane.querySelectorAll("[data-act]").forEach(function(b){
-      b.addEventListener("click", async function(){ b.disabled=true;
-        await db.from("appointments").update({status:b.dataset.act}).eq("id",b.dataset.id); renderAgenda(); renderRelatorios(); renderOrcamentos();
+      b.addEventListener("click", async function(){
+        b.disabled=true;
+        var isConfirm = b.dataset.act==="confirmado";
+        // a janela precisa ser aberta AQUI (ainda no clique do usuário), senão o navegador bloqueia o popup
+        var waWin = isConfirm ? window.open("", "_blank") : null;
+        var { error } = await db.from("appointments").update({status:b.dataset.act}).eq("id",b.dataset.id);
+        if(isConfirm && !error){
+          var a = data.filter(function(x){return x.id===b.dataset.id;})[0];
+          if(a){
+            var url="https://wa.me/55"+(a.customer_phone||"").replace(/\D/g,"")+"?text="+encodeURIComponent(confirmMsg(a,salon));
+            if(waWin) waWin.location.href=url; else window.open(url,"_blank");
+          } else if(waWin) waWin.close();
+        } else if(waWin){ waWin.close(); }
+        renderAgenda(); renderRelatorios(); renderOrcamentos();
       });
     });
     // excluir (vai pra lixeira)

@@ -119,14 +119,24 @@
   function confirmMsg(a, salon){
     var d=brDate(a.appt_date), h=(a.appt_time||"").slice(0,5), s=a.services?a.services.name:"seu horário";
     var link=manageLink(a);
-    return "Olá "+(a.customer_name||"")+"! Seu horário no "+(salon||"salão")+" foi *confirmado* ✅: "+s+
-           " — "+d+" às "+h+"."+(link?" Se precisar remarcar ou cancelar: "+link:"")+"\n\nAté lá! 😊";
+    return "Olá, "+(a.customer_name||"")+"! 😊\n\n"+
+           "Seu horário no *"+(salon||"salão")+"* está confirmado:\n\n"+
+           "✂️ "+s+"\n"+
+           "📅 "+d+" às "+h+"\n\n"+
+           "Chegue com uns minutinhos de antecedência. Se precisar remarcar ou cancelar, é só acessar o link abaixo:\n"+
+           (link?link+"\n\n":"\n")+
+           "Será um prazer receber você! Até breve ✨";
   }
   function waMsg(a, salon){
     var d=brDate(a.appt_date), h=(a.appt_time||"").slice(0,5), s=a.services?a.services.name:"seu horário";
     var link=manageLink(a);
-    return "Olá "+(a.customer_name||"")+"! Passando pra confirmar seu horário no "+(salon||"salão")+": "+s+
-           " — "+d+" às "+h+". Se precisar remarcar ou cancelar, acesse: "+link+"\n\nQualquer coisa, é só me chamar por aqui. 😊";
+    return "Olá, "+(a.customer_name||"")+"! ⏰\n\n"+
+           "Passando para lembrar do seu horário no *"+(salon||"salão")+"*:\n\n"+
+           "✂️ "+s+"\n"+
+           "📅 "+d+" às "+h+"\n\n"+
+           "Se precisar remarcar ou cancelar, é só acessar o link abaixo:\n"+
+           (link?link+"\n\n":"\n")+
+           "Até já! 😊";
   }
   async function renderAgenda(){
     var pane=el("pane-agenda");

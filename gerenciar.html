@@ -64,8 +64,8 @@
       (cancelado
         ? '<p class="muted center">Este agendamento foi cancelado.</p><div class="center"><a href="agendar.html" class="btn btn-gold" style="margin-top:8px">Agendar novo horário</a></div>'
         : '<div class="grid-2"><button class="btn btn-ghost" id="btnCancel">Cancelar agendamento</button>'+
-          '<a class="btn btn-gold" href="agendar.html">Remarcar (novo horário)</a></div>'+
-          '<p class="muted center" id="msg" style="margin-top:14px;font-size:.85rem">Para remarcar, cancele este e faça um novo — assim seu horário volta a ficar livre pra outra pessoa.</p>');
+          '<button class="btn btn-gold" id="btnReschedule">Remarcar (novo horário)</button></div>'+
+          '<p class="muted center" id="msg" style="margin-top:14px;font-size:.85rem">Ao remarcar, este agendamento é cancelado automaticamente e seu horário fica livre — você escolhe um novo em seguida.</p>');
 
     // Convite para avaliar no Google (aparece para agendamentos concluídos ou ativos)
     if(!cancelado){
@@ -90,6 +90,20 @@
       var cr = await db.rpc("cancel_appointment",{ p_id:id, p_token:token });
       if(cr.error || !cr.data || !cr.data.ok){ document.getElementById("msg").textContent = (cr.data&&cr.data.error)||"Não foi possível cancelar."; bc.disabled=false; bc.textContent="Cancelar agendamento"; return; }
       load();
+    });
+
+    var br=document.getElementById("btnReschedule");
+    if(br) br.addEventListener("click", async function(){
+      if(!confirm("Este agendamento será cancelado e você escolherá um novo horário. Continuar?")) return;
+      br.disabled=true; br.textContent="Cancelando…";
+      var cr = await db.rpc("cancel_appointment",{ p_id:id, p_token:token });
+      if(cr.error || !cr.data || !cr.data.ok){
+        var msg=document.getElementById("msg");
+        if(msg) msg.textContent = (cr.data&&cr.data.error)||"Não foi possível cancelar. Tente novamente.";
+        br.disabled=false; br.textContent="Remarcar (novo horário)";
+        return;
+      }
+      location.href="agendar.html";
     });
   }
   load();

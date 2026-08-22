@@ -15,6 +15,7 @@
     <nav id="tabs" class="hidden">
       <a data-tab="agenda" class="on">Agenda</a>
       <a data-tab="relatorios">Relatórios</a>
+      <a data-tab="clientes">Clientes</a>
       <a data-tab="profissionais">Profissionais</a>
       <a data-tab="bloqueios">Bloqueios</a>
       <a data-tab="avaliacoes">Avaliações</a>
@@ -32,6 +33,7 @@
   <div id="app" class="hidden">
     <div class="tabpane on" id="pane-agenda"></div>
     <div class="tabpane" id="pane-relatorios"></div>
+    <div class="tabpane" id="pane-clientes"></div>
     <div class="tabpane" id="pane-profissionais"></div>
     <div class="tabpane" id="pane-bloqueios"></div>
     <div class="tabpane" id="pane-avaliacoes"></div>
@@ -94,7 +96,7 @@
       return;
     }
     el("gate").classList.add("hidden"); el("app").classList.remove("hidden"); el("tabs").classList.remove("hidden");
-    setupTabs(); renderAgenda(); renderRelatorios(); renderProfissionais(); renderBloqueios(); renderAvaliacoes(); renderServicos(); renderOrcamentos(); renderConfig();
+    setupTabs(); renderAgenda(); renderRelatorios(); renderClientes(); renderProfissionais(); renderBloqueios(); renderAvaliacoes(); renderServicos(); renderOrcamentos(); renderConfig();
   }
 
   function setupTabs(){
@@ -110,10 +112,15 @@
 
   // ---------- AGENDA ----------
   var agView="todos", agPro="", agHideCancel=false, agNew=false, agTrash=false;
+  function manageLink(a){
+    if(!a.manage_token) return "";
+    return location.origin+"/gerenciar.html?id="+a.id+"&t="+a.manage_token;
+  }
   function waMsg(a, salon){
     var d=brDate(a.appt_date), h=(a.appt_time||"").slice(0,5), s=a.services?a.services.name:"seu horário";
+    var link=manageLink(a);
     return "Olá "+(a.customer_name||"")+"! Passando pra confirmar seu horário no "+(salon||"salão")+": "+s+
-           " — "+d+" às "+h+". Qualquer coisa, é só me chamar por aqui. 😊";
+           " — "+d+" às "+h+". Se precisar remarcar ou cancelar, acesse: "+link+"\n\nQualquer coisa, é só me chamar por aqui. 😊";
   }
   async function renderAgenda(){
     var pane=el("pane-agenda");
@@ -402,10 +409,13 @@
       '<div class="grid-2">'+f("open_time","Abre (HH:MM)","09:00")+f("close_time","Fecha (HH:MM)","18:00")+
       f("slot_interval","Intervalo entre horários (min)","30")+f("capacity","Atendimentos simultâneos","1")+'</div>'+
       '<div class="field"><label>Dias de atendimento</label><div>'+dayboxes+'</div></div></div>'+
+      '<div class="panel" style="max-width:none;margin-bottom:22px"><h2 style="font-family:var(--serif);margin-top:0">Cancelamento de última hora</h2>'+
+      '<div class="grid-2">'+f("late_cancel_hours","Considerar “última hora” até quantas horas antes","4")+'</div>'+
+      '<span class="muted" style="font-size:.8rem;display:block">Cancelamentos dentro desse prazo entram automaticamente na aba “Clientes”.</span></div>'+
       '<button class="btn btn-gold" id="cfg_save">Salvar configurações</button> <span class="muted" id="cfg_msg" style="margin-left:10px"></span>'+
       '<div id="adminmgr"></div>';
     el("cfg_save").addEventListener("click", async function(){
-      var keys=["salon_name","salon_tagline","salon_phone","salon_whatsapp","salon_address","salon_instagram","open_time","close_time","slot_interval","capacity"];
+      var keys=["salon_name","salon_tagline","salon_phone","salon_whatsapp","salon_address","salon_instagram","open_time","close_time","slot_interval","capacity","late_cancel_hours"];
       var rows=keys.map(function(k){ return {key:k, value:(el("cfg_"+k).value||"").trim()}; });
       var wds=[]; pane.querySelectorAll(".wd:checked").forEach(function(c){ wds.push(c.value); });
       rows.push({key:"work_days", value:wds.join(",")});
@@ -659,6 +669,50 @@
       var blob=new Blob(["﻿"+lines.join("\n")],{type:"text/csv;charset=utf-8"});
       var url=URL.createObjectURL(blob); var a2=document.createElement("a");
       a2.href=url; a2.download="relatorio-"+start+"_a_"+next+".csv"; document.body.appendChild(a2); a2.click(); a2.remove(); URL.revokeObjectURL(url);
+    });
+  }
+
+  // ---------- CLIENTES (cancelamentos de última hora) ----------
+  async function renderClientes(){
+    var pane=el("pane-clientes");
+    pane.innerHTML='<h1 style="font-family:var(--serif);font-size:1.9rem;margin:0 0 6px">Clientes</h1>'+
+      '<p class="muted" style="margin:0 0 22px">Carregando…</p>';
+    var r=await db.rpc("get_late_cancellations");
+    if(r.error || !r.data || !r.data.ok){
+      pane.innerHTML='<h1 style="font-family:var(--serif);font-size:1.9rem;margin:0 0 6px">Clientes</h1>'+
+        '<div class="panel" style="max-width:none"><p class="muted">Recurso não disponível ainda. Rode a <b>migração 7</b> no Supabase para ativar.</p></div>';
+      return;
+    }
+    var list=r.data.clients||[];
+    var rows=list.map(function(c){
+      var wa=(c.phone||"").replace(/\D/g,"");
+      var occ=(c.occurrences||[]).map(function(o){
+        var d=brDate(o.date), h=(o.time||"").slice(0,5);
+        var when=o.hours_before!=null?(Number(o.hours_before)>=0?Number(o.hours_before)+"h antes":"depois do horário"):"";
+        return '<div class="muted" style="font-size:.8rem">'+d+' às '+h+' · cancelado '+when+'</div>';
+      }).join("");
+      var badgeCls = c.qtd>=3 ? "b-cancelado" : "b-pendente";
+      return '<tr><td><b>'+esc(c.name||"—")+'</b><br><a href="https://wa.me/55'+wa+'" target="_blank" style="color:var(--gold);font-size:.84rem">'+esc(c.phone||"")+'</a></td>'+
+        '<td><span class="badge '+badgeCls+'">'+c.qtd+'x</span></td>'+
+        '<td class="muted" style="font-size:.82rem">'+new Date(c.last_at).toLocaleString("pt-BR")+'</td>'+
+        '<td>'+occ+'</td>'+
+        '<td><button class="btn btn-sm btn-danger" data-clearphone="'+esc(c.phone||"")+'" title="Apagar histórico deste telefone">🗑 Limpar</button></td></tr>';
+    }).join("");
+    pane.innerHTML='<h1 style="font-family:var(--serif);font-size:1.9rem;margin:0 0 6px">Clientes</h1>'+
+      '<p class="muted" style="margin:0 0 22px">Quem cancela em cima da hora, registrado automaticamente (ajuste o prazo em Configurações). Serve pra você acompanhar clientes que costumam furar.</p>'+
+      '<div class="panel" style="max-width:none">'+
+      (list.length
+        ? '<div class="table-wrap"><table><thead><tr><th>Cliente</th><th>Qtd.</th><th>Última vez</th><th>Ocorrências</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div>'
+        : '<p class="muted center">Nenhum cancelamento de última hora registrado até agora. 🎉</p>')+
+      '</div>';
+    pane.querySelectorAll("[data-clearphone]").forEach(function(b){
+      b.addEventListener("click", async function(){
+        if(!confirm("Apagar o histórico de cancelamentos de última hora deste telefone?")) return;
+        b.disabled=true;
+        var rr=await db.rpc("admin_clear_late_cancellations",{p_phone:b.dataset.clearphone});
+        if(rr.error || !rr.data || !rr.data.ok){ alert((rr.data&&rr.data.error)||"Não foi possível limpar."); b.disabled=false; return; }
+        renderClientes();
+      });
     });
   }
 
